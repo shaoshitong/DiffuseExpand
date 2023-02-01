@@ -19,6 +19,10 @@ from .dist_utils import sync_params
 # 20-21 within the first ~1K steps of training.
 INITIAL_LOG_LOSS_SCALE = 20.0
 
+def yield_data(dataloader):
+    while True:
+        yield from dataloader
+
 
 class TrainLoop:
     def __init__(
@@ -44,7 +48,7 @@ class TrainLoop:
         self.model = model
         self.diffusion = diffusion
         self.train_data = data
-        self.data = iter(self.train_data)
+        self.data = yield_data(self.train_data)
         self.batch_size = batch_size
         self.save_path = save_path
         self.microbatch = microbatch if microbatch > 0 else batch_size
@@ -111,7 +115,7 @@ class TrainLoop:
         # sync_params(self.model.parameters())
 
     def _resume_parameters(self):
-        resume_checkpoint = os.path.join(self.save_path, f"model_{(self.step + self.resume_step):06d}.pt")
+        resume_checkpoint = os.path.join(self.save_path, f"model_stage2.pt")
         if resume_checkpoint:
             self.resume_step = parse_resume_step_from_filename(resume_checkpoint)
             # if dist.get_rank() == 0:
@@ -207,12 +211,12 @@ class TrainLoop:
             if self.gpu == 0:
                 state_dict = params
                 print(f"saving model {rate}...")
-                filename = f"model_{(self.step + self.resume_step):06d}.pt"
+                filename = f"model_stage2.pt"
                 th.save(state_dict, os.path.join(self.save_path, filename))
 
         save_checkpoint(0, self.mp_trainer.model.state_dict())
         if self.gpu == 0:
-            filename = f"opt{(self.step + self.resume_step):06d}.pt"
+            filename = f"opt_stage2.pt"
             th.save(self.opt.state_dict(), os.path.join(self.save_path, filename))
         dist.barrier()
 

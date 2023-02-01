@@ -122,7 +122,7 @@ if __name__ == '__main__':
 
 
 """
-python segmentation_buffer.py --dataset=COVID19 --loss_type sigmoid_l1 --model=Unet --train_epochs=50 \
+python stage1_train.py --dataset=COVID19 --loss_type sigmoid_l1 --model=Unet --train_epochs=50 \
 --num_experts=100 --buffer_path=/home/Bigdata/mtt_distillation_ckpt \
 --data_path=/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/images/ \
 --csv_path=/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/metadata.csv 

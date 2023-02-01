@@ -19,10 +19,9 @@ parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
 parser.add_argument('--dataset', type=str, default='COVID19', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
-parser.add_argument('--batch_size', type=int, default=1, help='batch size for training networks')
+parser.add_argument('--batch_size', type=int, default=2, help='batch size for training networks')
 parser.add_argument('--data_path', type=str, default='/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/images/', help='dataset path')
 parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
-parser.add_argument('--iterations', type=int, default=150000)
 parser.add_argument('--csv_path', type=str, default="/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/metadata.csv")
 parser.add_argument('--save_path', type=str, default="/home/Bigdata/mtt_distillation_ckpt/stage2")
 parser.add_argument('--unet_ckpt_path', type=str, default="/home/sst/product/diffusion-model-learning/demo/256x256_diffusion.pt")
@@ -85,7 +84,7 @@ def create_argparser():
         channel_mult="",
         lr=1e-4,
         fp16_scale_growth=1e-3,
-        lr_anneal_steps=300,
+        lr_anneal_steps=30000,
     )
 
     diffusion_defaults = dict(
