@@ -1,7 +1,7 @@
 ############################获取投影###########################################
-import cv2
 import SimpleITK as sitk
 import numpy as np
+from PIL import Image
 
 def windowAdjust(img, ww, wl):
     win_min = wl - ww / 2
@@ -26,7 +26,7 @@ def get_photo_mat(px, py, pz, space_origin, pixel_spacing, sample_num=256):
     extrinsic_[0:3, 0] = px
     extrinsic_[0:3, 1] = py
     extrinsic_[0:3, 2] = pz
-    extrinsic_[0:3, 3] = space_origin
+    extrinsic_[0:3, 3] = space_origin # TODO: 手工定义的R^3向量
     extrinsic = np.identity(4)
     extrinsic[0:3, 0:3] = np.linalg.inv(extrinsic_[0:3, 0:3])
     extrinsic[0:3, 3] = -np.dot(np.linalg.inv(extrinsic_[0:3, 0:3]), space_origin)
@@ -102,8 +102,9 @@ def slicing(path_volume):
         space_origin = np.array(volume.GetOrigin())
         space_directions = np.array(volume.GetDirection())
         space_spacing = np.array(volume.GetSpacing())
+        # print(space_origin,space_directions,space_spacing) [ -45.5         228.58453369 -271.88000488] [ 1.  0.  0.  0. -1.  0.  0.  0.  1.] [0.35546875 0.35546875 0.44999999]
         space_directions = space_directions.reshape(3, 3, order="c")
-        space_directions = space_spacing * space_directions
+        space_directions = space_spacing * space_directions # TODO: 单位坐标 ?
 
         img2world = np.identity(4)
         img2world[0:3, 0:3] = space_directions
@@ -115,6 +116,7 @@ def slicing(path_volume):
 
         #### get slice information
         # plane function: 给定投影平面的x,y,z轴向量,中心坐标,像素间距
+        # TODO: 建立正交坐标系 ?
         sample_num = 512
         px = np.array([0, 1, 1])
         px = px / np.linalg.norm(px)
@@ -123,6 +125,7 @@ def slicing(path_volume):
         pz = pz / np.linalg.norm(pz)
         py = np.cross(pz, px)
         py = py / np.linalg.norm(py)
+        # print(px,py,pz) [0.         0.70710678 0.70710678] [ 0.          0.70710678 -0.70710678] [-1.  0.  0.]
 
         plane_origin = np.array([45, 0, -164])  # Assume that plane_origin is at the center of the pic
         extrinsic, intrinsic, extrinsic_, intrinsic_ = get_photo_mat(px, py, pz, plane_origin, space_spacing,
@@ -141,14 +144,13 @@ def slicing(path_volume):
         LERP(map, npy_volume, plane2image)
         img_slice = Normalization(windowAdjust(map, 800, 200)) * 255  # 调节窗位窗宽
         img_slice = np.array(img_slice, dtype=np.uint8).transpose()
-        cv2.imshow('slice image', img_slice)
-        cv2.waitKey()
-
+        image = Image.fromarray(img_slice)
+        image.save("./ct_train_1001_image.png")
     slice(path_volume)
 
 
 if __name__ == "__main__":
-    path_volume = r"ct_train_1010_image.nii.gz"
+    path_volume = r"/home/Bigdata/medical_dataset/MM-WHS/MM-WHS/CT/train/ct_train_1001_image.nii.gz"
     slicing(path_volume)
 
 

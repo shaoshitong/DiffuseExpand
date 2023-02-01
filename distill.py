@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.utils
 from tqdm import tqdm
-from utils import get_dataset, get_network, get_eval_pool, evaluate_synset, get_time, DiffAugment, ParamDiffAug
+from util import get_dataset, get_network, get_eval_pool, evaluate_synset, get_time, DiffAugment, ParamDiffAug
 import wandb
 import copy
 import random
@@ -418,7 +418,7 @@ if __name__ == '__main__':
     parser.add_argument('--ipc', type=int, default=1, help='image(s) per class')
 
     parser.add_argument('--eval_mode', type=str, default='S',
-                        help='eval_mode, check utils.py for more info')
+                        help='eval_mode, check util.py for more info')
 
     parser.add_argument('--num_eval', type=int, default=5, help='how many networks to evaluate on')
 

@@ -511,6 +511,12 @@ class ResNetImageNet(nn.Module):
         return out
 
 
+from backbone import UNet
+
+
+def Unet(channel,num_classes):
+    return UNet(n_channels=channel,n_classes=num_classes)
+
 def ResNet18BN(channel, num_classes):
     return ResNet(BasicBlock, [2,2,2,2], channel=channel, num_classes=num_classes, norm='batchnorm')
 
