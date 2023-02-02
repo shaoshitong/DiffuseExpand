@@ -174,7 +174,7 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
         train_set,
         batch_size=args.batch_size,
         sampler=train_sampler,
-        num_workers=4,
+        num_workers=2,
         pin_memory=(torch.cuda.is_available()),
     )
 

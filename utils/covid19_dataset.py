@@ -130,7 +130,22 @@ class GenerateCOVID19Dataset(Dataset):
         if_label = (int(item // len(self.samples)) == 0)
         item = item % len(self.samples)
         idx = self.samples[item]
-        sample = self.dataset[idx]
+        """
+        get true data
+        """
+        sample = {}
+        sample["idx"] = idx
+        sample["lab"] = self.dataset.labels[idx]
+        imgid = self.dataset.csv['filename'].iloc[idx]
+        img_path = os.path.join(self.dataset.imgpath, imgid)
+        img = Image.open(img_path).convert('L')
+        sample["img"] = img
+        if self.dataset.semantic_masks:
+            sample["semantic_masks"] = self.dataset.get_semantic_mask_dict(imgid)
+        sample = apply_transforms(sample, self.dataset.transform)
+        mask = (sample["semantic_masks"]["Lungs"] == 1.).float()
+        sample["semantic_masks"]["Lungs"] = mask
+
         if if_label:
             return sample["semantic_masks"]["Lungs"].float(),1,item
         else:

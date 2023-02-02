@@ -19,7 +19,7 @@ parser.add_argument('--save_path', type=str, default="/home/Bigdata/mtt_distilla
 parser.add_argument('--unet_ckpt_path', type=str,
                     default="/home/sst/product/diffusion-model-learning/demo/256x256_diffusion.pt")
 parser.add_argument('--class_cond', type=bool, default=True)
-parser.add_argument('--num_classes_1', type=int, default=4)
+parser.add_argument('--num_classes_1', type=int, default=2)
 parser.add_argument('--num_classes_2', type=int, default=-1)
 parser.add_argument('--cuda_devices', type=str, default="0", help="data parallel training")
 
@@ -181,7 +181,7 @@ _model_fn, diffusion = create_model_and_diffusion(
 )
 import os, sys
 
-model_path = "/home/Bigdata/mtt_distillation_ckpt/stage2/model_000300.pt"
+model_path = "/home/Bigdata/mtt_distillation_ckpt/stage2/model_stage2.pt"
 if not os.path.exists(model_path):
     raise KeyError
 
@@ -232,13 +232,13 @@ model_fn = model_wrapper(
 )
 dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver++")
 image_shape = (BATCHSIZE, 1, 256, 256)
-set_random_seed(0)
+set_random_seed(1)
 x_T = torch.randn(image_shape).cuda()
 x_sample = dpm_solver.sample(
     x_T,
     steps=100,
     order=3,
-    skip_type="logSNR",
+    skip_type="time_uniform",
     method="multistep",
 )
 
@@ -263,6 +263,7 @@ def numpy_to_pil(images):
 
 for i in range(x_sample.shape[0]):
     sub_image = x_sample[i]
+    print(sub_image.min(),sub_image.max())
     sub_image = (sub_image / 2 + 0.5).clamp(0, 1)
     sub_image = sub_image.cpu().permute(1, 2, 0).numpy()
-    numpy_to_pil(sub_image)[0].save(f"sample_tau_is_{tau}_{i}.png")
+    numpy_to_pil(sub_image)[0].save(f"sample_{i}_{'image' if label1[i].item()==0 else 'mask'}_{label2[i].item()}.png")

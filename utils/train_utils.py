@@ -88,9 +88,9 @@ class TrainLoop:
                 self.model.cuda(gpu),
                 device_ids=[gpu],
                 output_device=gpu,
-                # broadcast_buffers=False,
-                # bucket_cap_mb=128,
-                # find_unused_parameters=False,
+                broadcast_buffers=False,
+                bucket_cap_mb=128,
+                find_unused_parameters=False,
             )
         else:
             if dist.get_world_size() > 1:
@@ -165,7 +165,7 @@ class TrainLoop:
     def forward_backward(self, batch, cond1, cond2):
         self.mp_trainer.zero_grad(self.opt)
         for i in range(0, batch.shape[0], self.microbatch):
-            micro = batch[i: i + self.microbatch].cuda(self.gpu) * 2 - 1
+            micro = batch[i: i + self.microbatch].cuda(self.gpu)*2-1
             micro_cond = {"y1": cond1[i: i + self.microbatch].cuda(self.gpu),
                           "y2": cond2[i: i + self.microbatch].cuda(self.gpu)}
             last_batch = (i + self.microbatch) >= batch.shape[0]
@@ -212,12 +212,12 @@ class TrainLoop:
             if self.gpu == 0:
                 state_dict = params
                 print(f"saving model {rate}...")
-                filename = f"model_stage2.pt"
+                filename = f"model_stage2_{self.resume_step+self.step}.pt"
                 th.save(state_dict, os.path.join(self.save_path, filename))
 
         save_checkpoint(0, self.mp_trainer.model.state_dict())
         if self.gpu == 0:
-            filename = f"opt_stage2.pt"
+            filename = f"opt_stage2_{self.resume_step+self.step}.pt"
             th.save(self.opt.state_dict(), os.path.join(self.save_path, filename))
         dist.barrier()
 
