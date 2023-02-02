@@ -19,6 +19,7 @@ from .dist_utils import sync_params
 # 20-21 within the first ~1K steps of training.
 INITIAL_LOG_LOSS_SCALE = 20.0
 
+
 def yield_data(dataloader):
     while True:
         yield from dataloader
@@ -164,7 +165,7 @@ class TrainLoop:
     def forward_backward(self, batch, cond1, cond2):
         self.mp_trainer.zero_grad(self.opt)
         for i in range(0, batch.shape[0], self.microbatch):
-            micro = batch[i: i + self.microbatch].cuda(self.gpu)
+            micro = batch[i: i + self.microbatch].cuda(self.gpu) * 2 - 1
             micro_cond = {"y1": cond1[i: i + self.microbatch].cuda(self.gpu),
                           "y2": cond2[i: i + self.microbatch].cuda(self.gpu)}
             last_batch = (i + self.microbatch) >= batch.shape[0]

@@ -104,7 +104,7 @@ dependencies:
   - zlib=1.2.11=h7f8727e_4
   - zstd=1.4.9=haebb681_0
   - pip:
-    - python-opencv
+    - opencv-python
     - SimpleITK
     - torchxrayvision
     - sklearn
