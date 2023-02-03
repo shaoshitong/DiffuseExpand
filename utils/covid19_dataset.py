@@ -148,9 +148,9 @@ class GenerateCOVID19Dataset(Dataset):
         sample["semantic_masks"]["Lungs"] = mask
 
         if if_label:
-            return sample["semantic_masks"]["Lungs"].float(),1,item
+            return sample["semantic_masks"]["Lungs"].float(),1,sample["semantic_masks"]["Lungs"].float()
         else:
-            return sample["img"].float(),0,item
+            return sample["img"].float(),0,sample["semantic_masks"]["Lungs"].float()
 
 def generate_clean_dataset(dataset):
     assert dataset.semantic_masks, "only turn segmentation task"

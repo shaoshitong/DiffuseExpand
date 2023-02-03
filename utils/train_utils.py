@@ -78,9 +78,8 @@ class TrainLoop:
         self.opt = AdamW(
             self.mp_trainer.master_params, lr=self.lr, weight_decay=self.weight_decay
         )
-        if self.resume_step:
-            self._load_optimizer_state()
-            self._resume_parameters()
+        # self._load_optimizer_state()
+        # self._resume_parameters()
 
         if th.cuda.is_available():
             self.use_ddp = True
@@ -90,7 +89,7 @@ class TrainLoop:
                 output_device=gpu,
                 broadcast_buffers=False,
                 bucket_cap_mb=128,
-                find_unused_parameters=False,
+                find_unused_parameters=True,
             )
         else:
             if dist.get_world_size() > 1:
@@ -116,7 +115,7 @@ class TrainLoop:
         # sync_params(self.model.parameters())
 
     def _resume_parameters(self):
-        resume_checkpoint = os.path.join(self.save_path, f"model_stage2.pt")
+        resume_checkpoint = os.path.join(self.save_path, f"model_stage2_10000.pt")
         if resume_checkpoint:
             self.resume_step = parse_resume_step_from_filename(resume_checkpoint)
             # if dist.get_rank() == 0:
@@ -130,12 +129,12 @@ class TrainLoop:
 
     def _load_optimizer_state(self):
         opt_checkpoint = os.path.join(
-            self.save_path, f"opt{self.resume_step:06}.pt"
+            self.save_path, f"opt_stage2_10000.pt"
         )
         if os.path.exists(opt_checkpoint):
             print(f"loading optimizer state from checkpoint: {opt_checkpoint}")
             state_dict = th.load(
-                opt_checkpoint, map_location="cpu"
+                opt_checkpoint, map_location="cuda"
             )
             self.opt.load_state_dict(state_dict)
 
@@ -200,6 +199,8 @@ class TrainLoop:
             return
         frac_done = (self.step + self.resume_step) / self.lr_anneal_steps
         lr = self.lr * (1 - frac_done)
+        if self.gpu==0 and self.step%100==0:
+            print(f"now lr is {lr}")
         for param_group in self.opt.param_groups:
             param_group["lr"] = lr
 
@@ -216,10 +217,10 @@ class TrainLoop:
                 th.save(state_dict, os.path.join(self.save_path, filename))
 
         save_checkpoint(0, self.mp_trainer.model.state_dict())
-        if self.gpu == 0:
-            filename = f"opt_stage2_{self.resume_step+self.step}.pt"
-            th.save(self.opt.state_dict(), os.path.join(self.save_path, filename))
-        dist.barrier()
+        # if self.gpu == 0:
+        #     filename = f"opt_stage2_{self.resume_step+self.step}.pt"
+        #     th.save(self.opt.state_dict(), os.path.join(self.save_path, filename))
+        print("finish saving!")
 
 
 def parse_resume_step_from_filename(filename):
