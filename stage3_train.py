@@ -14,7 +14,8 @@ from torch.utils.data import DataLoader
 from torch.optim import AdamW
 import numpy as np
 
-from utils import set_device, setup_dist, create_model_and_diffusion, create_named_schedule_sampler,TrainLoop, create_classifier_and_diffusion
+from utils import set_device, setup_dist, create_model_and_diffusion, create_named_schedule_sampler, TrainLoop, \
+    create_classifier_and_diffusion, PSNRLoss, DiceLoss
 from backbone.fp16_util import MixedPrecisionTrainer
 
 parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
@@ -22,11 +23,15 @@ parser.add_argument('--dataset', type=str, default='COVID19', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
 parser.add_argument('--batch_size', type=int, default=4, help='batch size for training networks')
-parser.add_argument('--data_path', type=str, default='/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/images/', help='dataset path')
+parser.add_argument('--data_path', type=str,
+                    default='/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/images/',
+                    help='dataset path')
 parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
-parser.add_argument('--csv_path', type=str, default="/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/metadata.csv")
+parser.add_argument('--csv_path', type=str,
+                    default="/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/metadata.csv")
 parser.add_argument('--save_path', type=str, default="/home/Bigdata/mtt_distillation_ckpt/stage2")
-parser.add_argument('--unet_ckpt_path', type=str, default="/home/sst/product/diffusion-model-learning/demo/256x256_diffusion.pt")
+parser.add_argument('--unet_ckpt_path', type=str,
+                    default="/home/sst/product/diffusion-model-learning/demo/256x256_diffusion.pt")
 parser.add_argument('--class_cond', type=bool, default=True)
 parser.add_argument('--num_classes_1', type=int, default=2)
 parser.add_argument('--num_classes_2', type=int, default=-1)
@@ -57,9 +62,14 @@ def add_dict_to_argparser(parser, default_dict):
         parser.add_argument(f"--{k}", default=v, type=v_type)
 
 
+def yield_data(dataloader):
+    while True:
+        yield from dataloader
+
+
 def create_argparser():
     defaults = dict(
-        iterations=150000,
+        iterations=50000,
         image_size=256,
         num_channels=256,
         num_res_blocks=2,
@@ -91,7 +101,7 @@ def create_argparser():
     )
 
     diffusion_defaults = dict(
-        learn_sigma=False, # TODO; MUST BE FALSE
+        learn_sigma=False,  # TODO; MUST BE FALSE
         diffusion_steps=1000,
         noise_schedule="linear",
         timestep_respacing="",
@@ -103,16 +113,16 @@ def create_argparser():
     defaults.update(diffusion_defaults)
 
     # TODO: classifier is not need
-    classifier_defaults=dict(
-            image_size=256,
-            classifier_use_fp16=True,
-            classifier_width=64,
-            classifier_depth=2,
-            classifier_attention_resolutions="",  # 16
-            classifier_use_scale_shift_norm=True,  # False
-            classifier_resblock_updown=True,  # False
-            classifier_pool="attention",
-        )
+    classifier_defaults = dict(
+        image_size=256,
+        classifier_use_fp16=True,
+        classifier_width=64,
+        classifier_depth=2,
+        classifier_attention_resolutions="",  # 16
+        classifier_use_scale_shift_norm=True,  # False
+        classifier_resblock_updown=True,  # False
+        classifier_pool="attention",
+    )
     defaults.update(classifier_defaults)
 
     add_dict_to_argparser(parser, defaults)
@@ -152,6 +162,7 @@ def set_random_seed(number=0):
 #     model.load_state_dict(model_state_dict)
 #     return model
 
+
 def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
     # TODO: Initialize the ddp environment
     print("Use GPU: {} for training".format(gpu))
@@ -171,22 +182,30 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
     from utils.covid19_dataset import COVID19Dataset, generate_clean_dataset, clean_dataset
     assert args.csv_path != "no", "COVID-19 Segmentation task need csv metadata!"
     dst = COVID19Dataset(imgpath=args.data_path, csvpath=args.csv_path, semantic_masks=True)
-    train_set = generate_clean_dataset(dst)
-    train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
+    dst = generate_clean_dataset(dst)
+    from sklearn.model_selection import StratifiedShuffleSplit
+    labels = [0 for i in range(len(dst))]
+    ss = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=0)
+    train_indices, valid_indices = list(ss.split(np.array(labels)[:, np.newaxis], labels))[0]
+    dst_train = torch.utils.data.Subset(dst, train_indices)
+    dst_test = torch.utils.data.Subset(dst, valid_indices)
+    train_sampler = torch.utils.data.distributed.DistributedSampler(dst_train)
     train_loader = DataLoader(
-        train_set,
+        dst_train,
         batch_size=args.batch_size,
         sampler=train_sampler,
         num_workers=2,
         pin_memory=(torch.cuda.is_available()),
     )
-    iter = 0
-    for i,(image,label1,label2) in enumerate(train_set):
-        if label1 == 0:
-            torchvision.transforms.ToPILImage()(image).save(f"{i}_image.png")
-        else:
-            torchvision.transforms.ToPILImage()(image).save(f"{i}_mask.png")
-    exit(-1)
+    train_loader = yield_data(train_loader)
+    test_loader = DataLoader(
+        dst_test,
+        batch_size=args.batch_size,
+        sampler=train_sampler,
+        num_workers=2,
+        pin_memory=(torch.cuda.is_available()),
+    )
+    test_loader = yield_data(test_loader)
     NAME = [
         "image_size",
         "classifier_use_fp16",
@@ -208,7 +227,7 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
         "num_classes_2",
     ]
     # TODO: Define UNet and diffusion scheduler
-    args.num_classes_2 = int(len(train_set)//2)
+    args.num_classes_2 = 1
     model, diffusion = create_classifier_and_diffusion(
         **args_to_dict(args, NAME)
     )
@@ -222,7 +241,7 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
         model=model, use_fp16=args.classifier_use_fp16, initial_lg_loss_scale=16.0
     )
     model = DDP(
-        model,
+        model.cuda(gpu),
         device_ids=[gpu],
         output_device=gpu,
         broadcast_buffers=False,
@@ -231,6 +250,86 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
     )
     opt = AdamW(mp_trainer.master_params, lr=args.lr, weight_decay=args.weight_decay)
 
+    psnr_loss = PSNRLoss()
+    dice_loss = DiceLoss()
+
+    def split_microbatches(microbatch, *args):
+        bs = len(args[0])
+        if microbatch == -1 or microbatch >= bs:
+            yield tuple(args)
+        else:
+            for i in range(0, bs, microbatch):
+                yield tuple(x[i: i + microbatch] if x is not None else None for x in args)
+
+    def forward_backward_log(data_loader, prefix="train"):
+        batch, cond1, cond2 = next(data_loader)
+        labels = cond2.cuda(gpu).float()
+        batch = batch.cuda(gpu)
+        # Noisy images
+        if args.noised:
+            t, _ = schedule_sampler.sample(batch.shape[0], gpu)
+            batch = diffusion.q_sample(batch, t)
+        else:
+            t = torch.zeros(batch.shape[0], dtype=torch.long).cuda(gpu)
+
+        for i, (sub_batch, sub_labels, sub_t) in enumerate(
+                split_microbatches(args.microbatch, batch, labels, t)
+        ):
+            logits = model(sub_batch, timesteps=sub_t)
+            diceloss = dice_loss(logits.sigmoid(), sub_labels)
+            mseloss = F.mse_loss(logits.sigmoid(), sub_labels)
+            loss = diceloss + mseloss
+            losses = {}
+            losses[f"{prefix}_dice_loss"] = diceloss.detach().item()
+            losses[f"{prefix}_mse_loss"] = mseloss.detach().item()
+            losses[f"{prefix}_psnr_loss"] = psnr_loss(logits.sigmoid(), sub_labels).detach().item()
+            print(losses)
+            del losses
+            loss = loss.mean()
+            if loss.requires_grad:
+                if i == 0:
+                    mp_trainer.zero_grad(opt)
+                mp_trainer.backward(loss * len(sub_batch) / len(batch))
+
+    for step in range(args.iterations):
+        print(f"step is {step}")
+        if args.anneal_lr:
+            set_annealed_lr(opt, args.lr, (step) / args.iterations)
+
+        forward_backward_log(train_loader)
+        mp_trainer.optimize(opt)
+        if test_loader is not None and not step % args.eval_interval:
+            with torch.no_grad():
+                with model.no_sync():
+                    model.eval()
+                    forward_backward_log(test_loader, prefix="val")
+                    model.train()
+        if (
+                step
+                and dist.get_rank() == 0
+                and not (step) % args.save_interval
+        ):
+            print("saving model...")
+            save_model(mp_trainer, opt, step)
+
+    if dist.get_rank() == 0:
+        save_model(mp_trainer, opt, args.iterations)
+    dist.barrier()
+
+
+def set_annealed_lr(opt, base_lr, frac_done):
+    lr = base_lr * (1 - frac_done)
+    for param_group in opt.param_groups:
+        param_group["lr"] = lr
+
+
+def save_model(mp_trainer, opt, step):
+    if dist.get_rank() == 0:
+        global args
+        torch.save(
+            mp_trainer.master_params,
+            os.path.join(args.save_path, f"stage3_{step}.pt"),
+        )
 
 
 def main():

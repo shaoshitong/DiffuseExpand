@@ -8,7 +8,7 @@ parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
 parser.add_argument('--dataset', type=str, default='COVID19', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
-parser.add_argument('--batch_size', type=int, default=2, help='batch size for training networks')
+parser.add_argument('--batch_size', type=int, default=4, help='batch size for training networks')
 parser.add_argument('--data_path', type=str,
                     default='./covid-chestxray-dataset/images/',
                     help='dataset path')
@@ -127,10 +127,8 @@ def set_random_seed(seed):
 # TODO: Definition
 
 args = create_argparser().parse_args()
-BATCHSIZE = 6
+BATCHSIZE = args.batch_size
 label1 = torch.ones(BATCHSIZE).long().cuda()
-label1[::2]  = label1[::2] * 0
-label2 = torch.ones(BATCHSIZE).long().cuda() * 5
 
 NAME = [
     "image_size",
@@ -160,29 +158,15 @@ NAME = [
     "num_classes_2",
 ]
 
-# TODO: Define UNet and diffusion scheduler
-from utils.covid19_dataset import COVID19Dataset, generate_clean_dataset
-
-assert args.csv_path != "no", "COVID-19 Segmentation task need csv metadata!"
-dst = COVID19Dataset(imgpath=args.data_path, csvpath=args.csv_path, semantic_masks=True)
-train_set = generate_clean_dataset(dst)
-
-train_loader = DataLoader(
-    train_set,
-    batch_size=args.batch_size,
-    shuffle=True,
-    num_workers=4,
-    pin_memory=(torch.cuda.is_available()),
-)
 
 # TODO: I. define model
-args.num_classes_2 = int(len(train_set) // 2)
+args.num_classes_2 = 1
 _model_fn, diffusion = create_model_and_diffusion(
     **args_to_dict(args, NAME)
 )
 import os, sys
 
-model_path = "./stage2/model_stage2_9000.pt"
+model_path = "./stage2/model_stage2_30000.pt"
 if not os.path.exists(model_path):
     raise KeyError
 
@@ -196,7 +180,7 @@ def model(x, t, **kwargs):
     model_output = _model_fn(x, t, **kwargs)
     return model_output
 
-
+label2 = None
 # TODO: II. define model_kwargs
 model_kwargs = {"y1": label1, "y2": label2}
 
@@ -220,22 +204,10 @@ from utils import get_named_beta_schedule
 betas = torch.from_numpy(get_named_beta_schedule("linear", 1000)).cuda()
 
 noise_schedule = NoiseScheduleVP(schedule='discrete', betas=betas)
-model_fn = model_wrapper(
-    model,
-    noise_schedule,
-    model_type="noise",  # or "x_start" or "v" or "score"
-    model_kwargs=model_kwargs,
-    guidance_type="uncond",
-    condition=condition,
-    guidance_scale=guidance_scale,
-    classifier_fn=classifier,
-    classifier_kwargs=classifier_kwargs,
-)
-dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver++",correcting_x0_fn = "dynamic_thresholding")
-image_shape = (BATCHSIZE//2, 1, 256, 256)
+image_shape = (BATCHSIZE, 1, 256, 256)
 
-for j in range(args.num_classes_2):
-    label2 = torch.ones(BATCHSIZE).long().cuda() * j
+for j in range(0,100,args.batch_size):
+    label2 = None
     model_kwargs =  {"y1": label1, "y2": label2}
     model_fn = model_wrapper(
                 model,
@@ -248,10 +220,33 @@ for j in range(args.num_classes_2):
                                             classifier_fn=classifier,
                                                 classifier_kwargs=classifier_kwargs,
                                                 )
-    x_T = torch.randn(image_shape).unsqueeze(1).expand(-1,2,1,256,256).cuda().view(BATCHSIZE,1,256,256)
+    dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver++",correcting_x0_fn = "dynamic_thresholding")
+    x_T = torch.randn(image_shape).cuda()
     with torch.no_grad():
-        x_sample = dpm_solver.sample(
+        y_label = dpm_solver.sample(
         x_T,
+        steps=30,
+        order=3,
+        skip_type="time_uniform",
+        method="multistep",
+        )
+    model_kwargs = {"y1":label1*0,"y2": torch.sign(y_label)}
+    model_kwargs["y2"][model_kwargs["y2"] <= 0] = 0
+    model_fn = model_wrapper(
+        model,
+        noise_schedule,
+        model_type="noise",  # or "x_start" or "v" or "score"
+        model_kwargs=model_kwargs,
+        guidance_type="uncond",
+        condition=condition,
+        guidance_scale=guidance_scale,
+        classifier_fn=classifier,
+        classifier_kwargs=classifier_kwargs,
+    )
+    dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver++",correcting_x0_fn = "dynamic_thresholding")
+    with torch.no_grad():
+        x_image = dpm_solver.sample(
+        torch.randn_like(x_T).cuda(),
         steps=30,
         order=3,
         skip_type="time_uniform",
@@ -276,9 +271,12 @@ for j in range(args.num_classes_2):
         return pil_images
 
 
-    for i in range(x_sample.shape[0]):
-        sub_image = x_sample[i]
-        print(sub_image.min(),sub_image.max())
+    for i in range(x_image.shape[0]):
+        sub_image,sub_label = x_image[i],y_label[i]
+        print(sub_image.min(),sub_image.max(),sub_label.min(),sub_label.max())
         sub_image = (sub_image / 2 + 0.5).clamp(0, 1)
         sub_image = sub_image.cpu().permute(1, 2, 0).numpy()
-        numpy_to_pil(sub_image)[0].save(f"sample_{int(BATCHSIZE//2)*j+int(i//2)}_{'image' if label1[i].item()==0 else 'mask'}_{label2[i].item()}.png")
+        sub_label = (sub_label / 2 + 0.5).clamp(0, 1)
+        sub_label = sub_label.cpu().permute(1, 2, 0).numpy()
+        numpy_to_pil(sub_image)[0].save(f"image_{j+i}.png")
+        numpy_to_pil(sub_label)[0].save(f"mask_{j+i}.png")
