@@ -127,6 +127,7 @@ class GenerateCOVID19Dataset(Dataset):
         return 2 * len(self.samples)
 
     def __getitem__(self, item) -> [torch.Tensor,int,int]:
+        _ = self.samples[item//2]
         if_label = (int(item // len(self.samples)) == 0)
         item = item % len(self.samples)
         idx = self.samples[item]

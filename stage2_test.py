@@ -10,11 +10,11 @@ parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
 parser.add_argument('--batch_size', type=int, default=2, help='batch size for training networks')
 parser.add_argument('--data_path', type=str,
-                    default='/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/images/',
+                    default='./covid-chestxray-dataset/images/',
                     help='dataset path')
 parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
 parser.add_argument('--csv_path', type=str,
-                    default="/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/metadata.csv")
+                    default="./covid-chestxray-dataset/metadata.csv")
 parser.add_argument('--save_path', type=str, default="/home/Bigdata/mtt_distillation_ckpt/stage2")
 parser.add_argument('--unet_ckpt_path', type=str,
                     default="/home/sst/product/diffusion-model-learning/demo/256x256_diffusion.pt")
@@ -127,9 +127,10 @@ def set_random_seed(seed):
 # TODO: Definition
 
 args = create_argparser().parse_args()
-BATCHSIZE = 4
-label1 = torch.ones(BATCHSIZE).long().cuda() * 0
-label2 = torch.ones(BATCHSIZE).long().cuda() * 13
+BATCHSIZE = 6
+label1 = torch.ones(BATCHSIZE).long().cuda()
+label1[::2]  = label1[::2] * 0
+label2 = torch.ones(BATCHSIZE).long().cuda() * 5
 
 NAME = [
     "image_size",
@@ -181,7 +182,7 @@ _model_fn, diffusion = create_model_and_diffusion(
 )
 import os, sys
 
-model_path = "/home/Bigdata/mtt_distillation_ckpt/stage2/model_stage2.pt"
+model_path = "./stage2/model_stage2_9000.pt"
 if not os.path.exists(model_path):
     raise KeyError
 
@@ -230,40 +231,54 @@ model_fn = model_wrapper(
     classifier_fn=classifier,
     classifier_kwargs=classifier_kwargs,
 )
-dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver++")
-image_shape = (BATCHSIZE, 1, 256, 256)
-set_random_seed(1)
-x_T = torch.randn(image_shape).cuda()
-x_sample = dpm_solver.sample(
-    x_T,
-    steps=100,
-    order=3,
-    skip_type="time_uniform",
-    method="multistep",
-)
+dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver++",correcting_x0_fn = "dynamic_thresholding")
+image_shape = (BATCHSIZE//2, 1, 256, 256)
 
-from PIL import Image
+for j in range(args.num_classes_2):
+    label2 = torch.ones(BATCHSIZE).long().cuda() * j
+    model_kwargs =  {"y1": label1, "y2": label2}
+    model_fn = model_wrapper(
+                model,
+                    noise_schedule,
+                        model_type="noise",  # or "x_start" or "v" or "score"
+                            model_kwargs=model_kwargs,
+                                guidance_type="uncond",
+                                    condition=condition,
+                                        guidance_scale=guidance_scale,
+                                            classifier_fn=classifier,
+                                                classifier_kwargs=classifier_kwargs,
+                                                )
+    x_T = torch.randn(image_shape).unsqueeze(1).expand(-1,2,1,256,256).cuda().view(BATCHSIZE,1,256,256)
+    with torch.no_grad():
+        x_sample = dpm_solver.sample(
+        x_T,
+        steps=30,
+        order=3,
+        skip_type="time_uniform",
+        method="multistep",
+        )
+
+    from PIL import Image
 
 
-def numpy_to_pil(images):
-    """
-    Convert a numpy image or a batch of images to a PIL image.
-    """
-    if images.ndim == 3:
-        images = images[None, ...]
-    images = (images * 255).round().astype("uint8")
-    if images.shape[-1] == 1:
-        # special case for grayscale (single channel) images
-        pil_images = [Image.fromarray(image.squeeze(), mode="L") for image in images]
-    else:
-        pil_images = [Image.fromarray(image) for image in images]
+    def numpy_to_pil(images):
+        """
+        Convert a numpy image or a batch of images to a PIL image.
+        """
+        if images.ndim == 3:
+            images = images[None, ...]
+        images = (images * 255).round().astype("uint8")
+        if images.shape[-1] == 1:
+            # special case for grayscale (single channel) images
+            pil_images = [Image.fromarray(image.squeeze(), mode="L") for image in images]
+        else:
+            pil_images = [Image.fromarray(image) for image in images]
+        return pil_images
 
-    return pil_images
 
-
-for i in range(x_sample.shape[0]):
-    sub_image = x_sample[i]
-    print(sub_image.min(),sub_image.max())
-    sub_image = (sub_image / 2 + 0.5).clamp(0, 1)
-    sub_image = sub_image.cpu().permute(1, 2, 0).numpy()
-    numpy_to_pil(sub_image)[0].save(f"sample_{i}_{'image' if label1[i].item()==0 else 'mask'}_{label2[i].item()}.png")
+    for i in range(x_sample.shape[0]):
+        sub_image = x_sample[i]
+        print(sub_image.min(),sub_image.max())
+        sub_image = (sub_image / 2 + 0.5).clamp(0, 1)
+        sub_image = sub_image.cpu().permute(1, 2, 0).numpy()
+        numpy_to_pil(sub_image)[0].save(f"sample_{int(BATCHSIZE//2)*j+int(i//2)}_{'image' if label1[i].item()==0 else 'mask'}_{label2[i].item()}.png")

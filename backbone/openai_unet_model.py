@@ -685,7 +685,8 @@ class EncoderUNetModel(nn.Module):
             image_size,
             in_channels,
             model_channels,
-            out_channels,
+            num_classes_1,
+            num_classes_2,
             num_res_blocks,
             attention_resolutions,
             dropout=0,
@@ -709,7 +710,8 @@ class EncoderUNetModel(nn.Module):
 
         self.in_channels = in_channels
         self.model_channels = model_channels
-        self.out_channels = out_channels
+        self.num_classes_1 = num_classes_1
+        self.num_classes_2 = num_classes_2
         self.num_res_blocks = num_res_blocks
         self.attention_resolutions = attention_resolutions
         self.dropout = dropout
@@ -815,34 +817,35 @@ class EncoderUNetModel(nn.Module):
         self._feature_size += ch
         self.pool = pool
         if pool == "adaptive":
-            self.out = nn.Sequential(
+            self.out1 = nn.Sequential(
                 normalization(ch),
                 nn.SiLU(),
                 nn.AdaptiveAvgPool2d((1, 1)),
-                zero_module(conv_nd(dims, ch, out_channels, 1)),
+                zero_module(conv_nd(dims, ch, num_classes_1, 1)),
+                nn.Flatten(),
+            )
+            self.out2 = nn.Sequential(
+                normalization(ch),
+                nn.SiLU(),
+                nn.AdaptiveAvgPool2d((1, 1)),
+                zero_module(conv_nd(dims, ch, num_classes_2, 1)),
                 nn.Flatten(),
             )
         elif pool == "attention":
             assert num_head_channels != -1
-            self.out = nn.Sequential(
+            self.out1 = nn.Sequential(
                 normalization(ch),
                 nn.SiLU(),
                 AttentionPool2d(
-                    (image_size // ds), ch, num_head_channels, out_channels
+                    (image_size // ds), ch, num_head_channels, num_classes_1
                 ),
             )
-        elif pool == "spatial":
-            self.out = nn.Sequential(
-                nn.Linear(self._feature_size, 2048),
-                nn.ReLU(),
-                nn.Linear(2048, self.out_channels),
-            )
-        elif pool == "spatial_v2":
-            self.out = nn.Sequential(
-                nn.Linear(self._feature_size, 2048),
-                normalization(2048),
+            self.out2 = nn.Sequential(
+                normalization(ch),
                 nn.SiLU(),
-                nn.Linear(2048, self.out_channels),
+                AttentionPool2d(
+                    (image_size // ds), ch, num_head_channels, num_classes_2
+                ),
             )
         else:
             raise NotImplementedError(f"Unexpected {pool} pooling")
@@ -862,13 +865,6 @@ class EncoderUNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
 
     def forward(self, x, timesteps):
-        """
-        Apply the model to an input batch.
-
-        :param x: an [N x C x ...] Tensor of inputs.
-        :param timesteps: a 1-D batch of timesteps.
-        :return: an [N x K] Tensor of outputs.
-        """
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
 
         results = []
@@ -881,7 +877,7 @@ class EncoderUNetModel(nn.Module):
         if self.pool.startswith("spatial"):
             results.append(h.type(x.dtype).mean(dim=(2, 3)))
             h = th.cat(results, axis=-1)
-            return self.out(h)
+            return self.out1(h),self.out2(h)
         else:
             h = h.type(x.dtype)
-            return self.out(h)
+            return self.out(h),self.out2(h)
