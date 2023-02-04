@@ -106,47 +106,36 @@ def create_gaussian_diffusion(
     )
 
 
-def create_classifier(
-        image_size,
-        classifier_use_fp16,
-        classifier_width,
-        classifier_depth,
-        classifier_attention_resolutions,
-        classifier_use_scale_shift_norm,
-        classifier_resblock_updown,
-        classifier_pool,
-        num_classes_1,
-        num_classes_2,
-):
-    if image_size == 512:
-        channel_mult = (0.5, 1, 1, 2, 2, 4, 4)
-    elif image_size == 256:
-        channel_mult = (1, 2, 2, 4)
-    elif image_size == 128:
-        channel_mult = (1, 1, 2, 3, 4)
-    elif image_size == 64:
-        channel_mult = (1, 2, 3, 4)
-    else:
-        raise ValueError(f"unsupported image size: {image_size}")
-
-    attention_ds = []
-    for res in classifier_attention_resolutions.split(","):
-        attention_ds.append(image_size // int(res))
+def create_classifier():
+    image_size = 256
+    in_channels = 1
+    model_channels = 64
+    out_channels = 1
+    num_res_blocks = 1
+    channel_mult = (1, 2, 2, 4)
+    attention_resolutions = [16]
 
     return EncoderUNetModel(
-        image_size=image_size,
-        in_channels=1,
-        model_channels=classifier_width,
-        num_classes_1=num_classes_1,
-        num_classes_2=num_classes_2,
-        num_res_blocks=classifier_depth,
-        attention_resolutions=tuple(attention_ds),
-        channel_mult=channel_mult,
-        use_fp16=classifier_use_fp16,
-        num_head_channels=64,
-        use_scale_shift_norm=classifier_use_scale_shift_norm,
-        resblock_updown=classifier_resblock_updown,
-        pool=classifier_pool,
+            image_size,
+            in_channels,
+            model_channels,
+            out_channels,
+            num_res_blocks,
+            attention_resolutions,
+            dropout=0,
+            channel_mult=channel_mult,
+            conv_resample=True,
+            dims=2,
+            num_classes_1=None,
+            num_classes_2=None,
+            use_checkpoint=False,
+            use_fp16=False,
+            num_heads=1,
+            num_head_channels=4,
+            num_heads_upsample=-1,
+            use_scale_shift_norm=True,
+            resblock_updown=True,
+            use_new_attention_order=False,
     )
 
 
@@ -230,18 +219,7 @@ def create_classifier_and_diffusion(
         num_classes_1,
         num_classes_2,
 ):
-    classifier = create_classifier(
-        image_size,
-        classifier_use_fp16,
-        classifier_width,
-        classifier_depth,
-        classifier_attention_resolutions,
-        classifier_use_scale_shift_norm,
-        classifier_resblock_updown,
-        classifier_pool,
-        num_classes_1,
-        num_classes_2,
-    )
+    classifier = create_classifier()
     diffusion = create_gaussian_diffusion(
         steps=diffusion_steps,
         learn_sigma=learn_sigma,

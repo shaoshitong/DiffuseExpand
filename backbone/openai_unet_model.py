@@ -638,6 +638,17 @@ class UNetModel(nn.Module):
         self.output_blocks.apply(convert_module_to_f32)
 
     def forward(self, x, timesteps, y1=None, y2=None):
+        """
+        Apply the model to an input batch.
+
+        :param x: an [N x C x ...] Tensor of inputs.
+        :param timesteps: a 1-D batch of timesteps.
+        :param y: an [N] Tensor of labels, if class-conditional.
+        :return: an [N x C x ...] Tensor of outputs.
+        """
+        assert (y1 is not None) == (
+                self.num_classes_1 is not None
+        ), "must specify y1 if and only if the model is class-conditional"
         hs = []
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
 
@@ -659,10 +670,10 @@ class UNetModel(nn.Module):
         h = h.type(x.dtype)
         return self.out(h)
 
+
 class EncoderUNetModel(UNetModel):
     """
     The half UNet model with attention and timestep embedding.
-
     For usage, see UNet.
     """
 
@@ -711,9 +722,6 @@ class EncoderUNetModel(UNetModel):
             resblock_updown=resblock_updown,
             use_new_attention_order=use_new_attention_order,
         )
-
-        del self.label_emb_1
-        del self.label_emb_2
 
     def convert_to_fp16(self):
         """
