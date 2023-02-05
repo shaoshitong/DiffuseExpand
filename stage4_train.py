@@ -49,7 +49,7 @@ def turn_generate_mask(g_path1):
     write_image("fix_outputs",generate_image,generate_name)
 
 if __name__ == "__main__":
-    turn_generate_image("./outputs3/","./origin/")
-    turn_generate_mask("./outputs3/")
+    turn_generate_image("./stage2/","./origin/")
+    turn_generate_mask("./stage2/")
 
 

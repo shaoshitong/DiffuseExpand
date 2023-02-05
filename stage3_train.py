@@ -305,7 +305,7 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
                 split_microbatches(args.microbatch, batch, labels, t)
         ):
             logits = model(sub_batch, timesteps=sub_t)
-            print(logits.mean(),sub_labels.mean())
+            print(logits.mean(), sub_labels.mean())
             diceloss = dice_loss(logits.sigmoid(), sub_labels)
             mseloss = F.mse_loss(logits.sigmoid(), sub_labels)
             loss = diceloss + mseloss
@@ -320,13 +320,14 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
                     mp_trainer.zero_grad(opt)
                 mp_trainer.backward(loss * len(sub_batch) / len(batch))
             return losses
-    for step in range(int(args.iterations//len(train_loader))):
-        for i,(batch,cond2) in enumerate(train_loader):
-            print(f"step is {step*len(train_loader)+i}")
+
+    for step in range(int(args.iterations // len(train_loader))):
+        for i, (batch, cond2) in enumerate(train_loader):
+            print(f"step is {step * len(train_loader) + i}")
             if args.anneal_lr:
                 set_annealed_lr(opt, args.lr, (step) / args.iterations)
 
-            forward_backward_log([batch,cond2])
+            forward_backward_log([batch, cond2])
             mp_trainer.optimize(opt)
             if (
                     step
@@ -335,12 +336,12 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
             ):
                 print("saving model...")
                 save_model(mp_trainer, opt, step)
-        total_loss = {"val_dice_loss":0,"val_psnr_loss":0,"val_mse_loss":0}
-        for i,(batch,cond2) in enumerate(test_loader):
+        total_loss = {"val_dice_loss": 0, "val_psnr_loss": 0, "val_mse_loss": 0}
+        for i, (batch, cond2) in enumerate(test_loader):
             with torch.no_grad():
                 with model.no_sync():
                     model.eval()
-                    losses = forward_backward_log([batch,cond2], prefix="val")
+                    losses = forward_backward_log([batch, cond2], prefix="val")
                     for key in total_loss.keys():
                         total_loss[key] += losses[key]
                     model.train()
@@ -349,7 +350,7 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
         print(total_loss)
 
     if dist.get_rank() == 0:
-        save_model(mp_trainer, opt, args.iterations)
+        save_model(mp_trainer, opt, args.iterations, args.save_path)
     dist.barrier()
 
 
@@ -359,12 +360,11 @@ def set_annealed_lr(opt, base_lr, frac_done):
         param_group["lr"] = lr
 
 
-def save_model(mp_trainer, opt, step):
+def save_model(mp_trainer, opt, step, save_path):
     if dist.get_rank() == 0:
-        global args
         torch.save(
             mp_trainer.master_params,
-            os.path.join(args.save_path, f"stage3_model_{step}.pt"),
+            os.path.join(save_path, f"stage3_model_{step}.pt"),
         )
 
 

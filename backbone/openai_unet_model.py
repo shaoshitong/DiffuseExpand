@@ -741,7 +741,9 @@ class EncoderUNetModel(UNetModel):
         hs = []
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
         h = x.type(self.dtype).float()
+        print(h.device,"h")
         for module in self.input_blocks:
+            print(emb.device,"emb")
             h = module(h, emb.half())
             hs.append(h)
         h = self.middle_block(h, emb)
