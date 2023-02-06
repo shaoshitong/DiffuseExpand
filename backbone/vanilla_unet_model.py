@@ -46,3 +46,23 @@ class UNet(nn.Module):
         self.up3 = torch.utils.checkpoint(self.up3)
         self.up4 = torch.utils.checkpoint(self.up4)
         self.outc = torch.utils.checkpoint(self.outc)
+
+
+class UNetForFID(UNet):
+    def __init__(self, n_channels, n_classes, bilinear=False):
+        super(UNetForFID, self).__init__(n_channels, n_classes, bilinear=bilinear)
+
+    def forward(self, x):
+        x1 = self.inc(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
+        x = self.up1(x5, x4)
+        x = self.up2(x, x3)
+        x = self.up3(x, x2)
+        x = self.up4(x, x1)
+        x = (self.outc(x)).sigmoid()
+        x = F.adaptive_avg_pool2d(x, (32, 32))
+        # x = (x - torch.mean(x, [0], keepdim=True)) / (1e-8 + torch.std(x, [0], keepdim=True))
+        return x.view(x.shape[0], -1, 1, 1), None

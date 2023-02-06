@@ -51,47 +51,29 @@ def main(args):
     else:
         raise NotImplementedError
 
-    trajectories = []
     trainloader = torch.utils.data.DataLoader(dst_train, batch_size=args.batch_train, shuffle=True, num_workers=4)
+    ''' Train synthetic data '''
+    teacher_net = get_network(args.model, channel, num_classes, im_size).to(args.device) #  get a random model
+    teacher_net.train()
+    lr = args.lr_teacher
+    teacher_optim = torch.optim.Adam(teacher_net.parameters(), lr=lr, weight_decay=args.l2)  # optimizer_img for synthetic data
+    teacher_optim.zero_grad()
+    scheduler = CosineLRScheduler(teacher_optim, args.train_epochs * len(trainloader), lr_min=1e-7, warmup_lr_init=lr * 0.01,
+                                  warmup_t=5 * len(trainloader), t_in_epochs=False)
+    scaler = torch.cuda.amp.GradScaler()
+    iter = 0
+    for e in range(args.train_epochs):
 
-    for it in range(0, args.num_experts):
+        train_loss, train_acc = epoch("train", dataloader=trainloader, net=teacher_net, optimizer=teacher_optim,scheduler = scheduler, iter = iter, scaler = scaler,
+                                    criterion=criterion, args=args)
 
-        ''' Train synthetic data '''
-        print(f"Begin training expert {it}")
-        teacher_net = get_network(args.model, channel, num_classes, im_size).to(args.device) #  get a random model
-        teacher_net.train()
-        lr = args.lr_teacher
-        teacher_optim = torch.optim.Adam(teacher_net.parameters(), lr=lr, weight_decay=args.l2)  # optimizer_img for synthetic data
-        teacher_optim.zero_grad()
-        timestamps = []
-        timestamps.append([p.detach().cpu() for p in teacher_net.parameters()])
-        scheduler = CosineLRScheduler(teacher_optim, args.train_epochs * len(trainloader), lr_min=1e-7, warmup_lr_init=lr * 0.01,
-                                      warmup_t=5 * len(trainloader), t_in_epochs=False)
-        scaler = torch.cuda.amp.GradScaler()
+        test_loss, test_acc = epoch("test", dataloader=testloader, net=teacher_net, optimizer=None,scheduler = scheduler, iter = iter, scaler = scaler,
+                                    criterion=criterion, args=args)
+        iter += args.batch_train
+        print("Epoch: {}\tIter: {}\tLr: {}\tTrain Acc: {}\tTest Acc: {}".format(e, iter,scheduler._get_lr(iter)[0], train_acc, test_acc))
 
-        iter = 0
-        for e in range(args.train_epochs):
-
-            train_loss, train_acc = epoch("train", dataloader=trainloader, net=teacher_net, optimizer=teacher_optim,scheduler = scheduler, iter = iter, scaler = scaler,
-                                        criterion=criterion, args=args)
-
-            test_loss, test_acc = epoch("test", dataloader=testloader, net=teacher_net, optimizer=None,scheduler = scheduler, iter = iter, scaler = scaler,
-                                        criterion=criterion, args=args)
-            iter += args.batch_train
-            print("Itr: {}\tEpoch: {}\tIter: {}\tLr: {}\tTrain Acc: {}\tTest Acc: {}".format(it, e, iter,scheduler._get_lr(iter)[0], train_acc, test_acc))
-
-            timestamps.append([p.detach().cpu() for p in teacher_net.parameters()])
-
-
-        trajectories.append(timestamps)
-
-        if len(trajectories) == args.save_interval:
-            n = 0
-            while os.path.exists(os.path.join(save_dir, "replay_buffer_{}.pt".format(n))):
-                n += 1
-            print("Saving {}".format(os.path.join(save_dir, "replay_buffer_{}.pt".format(n))))
-            torch.save(trajectories, os.path.join(save_dir, "replay_buffer_{}.pt".format(n)))
-            trajectories = []
+    print("Saving {}".format(os.path.join(save_dir, "unet_for_fid.pt")))
+    torch.save(teacher_net.state_dict(), os.path.join(save_dir, "unet_for_fid.pt"))
 
 
 if __name__ == '__main__':
@@ -110,7 +92,7 @@ if __name__ == '__main__':
                         help='differentiable Siamese augmentation strategy')
     parser.add_argument('--data_path', type=str, default='data', help='dataset path')
     parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
-    parser.add_argument('--train_epochs', type=int, default=50)
+    parser.add_argument('--train_epochs', type=int, default=100)
     parser.add_argument('--zca', action='store_true')
     parser.add_argument('--decay', action='store_true')
     parser.add_argument('--mom', type=float, default=0, help='momentum')
