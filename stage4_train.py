@@ -56,127 +56,9 @@ class PairDatset(Dataset):
 
 
 def classifier(model_path="/home/Bigdata/mtt_distillation_ckpt/COVID19/stage4_tau_0.5/stage3_model_5000.pt"):
-    from utils import create_classifier_and_diffusion
-
-    def args_to_dict(args, keys):
-        return {k: getattr(args, k) for k in keys}
-
-    def str2bool(v):
-        """
-        https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse
-        """
-        if isinstance(v, bool):
-            return v
-        if v.lower() in ("yes", "true", "t", "y", "1"):
-            return True
-        elif v.lower() in ("no", "false", "f", "n", "0"):
-            return False
-        else:
-            raise argparse.ArgumentTypeError("boolean value expected")
-
-    def add_dict_to_argparser(parser, default_dict):
-        for k, v in default_dict.items():
-            v_type = type(v)
-            if v is None:
-                v_type = str
-            elif isinstance(v, bool):
-                v_type = str2bool
-            parser.add_argument(f"--{k}", default=v, type=v_type)
-
-    def create_argparser_2():
-        defaults = dict(
-            iterations=5000,
-            image_size=256,
-            num_channels=256,
-            num_res_blocks=2,
-            num_heads=4,
-            num_heads_upsample=-1,
-            num_head_channels=64,
-            attention_resolutions="32,16,8",
-            dropout=0.0,
-            use_checkpoint=False,
-            use_scale_shift_norm=True,
-            resblock_updown=True,
-            use_fp16=True,
-            use_new_attention_order=False,
-            data_dir="",
-            val_data_dir="",
-            noised=True,
-            weight_decay=0.0,
-            anneal_lr=False,
-            microbatch=-1,
-            schedule_sampler="uniform",
-            resume_checkpoint=None,
-            log_interval=10,
-            eval_interval=5,
-            save_interval=1000,
-            channel_mult="",
-            lr=3e-4,
-            fp16_scale_growth=1e-3,
-            lr_anneal_steps=30000,
-        )
-
-        diffusion_defaults = dict(
-            learn_sigma=False,  # TODO; MUST BE FALSE
-            diffusion_steps=1000,
-            noise_schedule="linear",
-            timestep_respacing="",
-            use_kl=False,
-            predict_xstart=False,
-            rescale_timesteps=False,
-            rescale_learned_sigmas=False,
-        )
-        defaults.update(diffusion_defaults)
-
-        # TODO: classifier is not need
-        classifier_defaults = dict(
-            image_size=256,
-            classifier_use_fp16=True,
-            classifier_width=64,
-            classifier_depth=2,
-            classifier_attention_resolutions="16",  # 16
-            classifier_use_scale_shift_norm=True,  # False
-            classifier_resblock_updown=True,  # False
-            classifier_pool="attention",
-        )
-        defaults.update(classifier_defaults)
-
-        add_dict_to_argparser(parser, defaults)
-        return parser
-
-    args = create_argparser_2().parse_args()
-    NAME = [
-        "image_size",
-        "classifier_use_fp16",
-        "classifier_width",
-        "classifier_depth",
-        "classifier_attention_resolutions",
-        "classifier_use_scale_shift_norm",
-        "classifier_resblock_updown",
-        "classifier_pool",
-        "learn_sigma",
-        "diffusion_steps",
-        "noise_schedule",
-        "timestep_respacing",
-        "use_kl",
-        "predict_xstart",
-        "rescale_timesteps",
-        "rescale_learned_sigmas",
-        "num_classes_1",
-        "num_classes_2",
-    ]
-    # TODO: Define UNet and diffusion scheduler
-    args.num_classes_2 = 1
-    classifier_fn, _ = create_classifier_and_diffusion(
-        **args_to_dict(args, NAME)
-    )
-
-    model_path_2 = model_path
-    if not os.path.exists(model_path_2):
-        raise KeyError
-
-    model_params = torch.load(model_path_2, map_location="cpu")
-    classifier_fn.load_state_dict(model_params)
+    from backbone import UNet
+    classifier_fn = UNet(n_classes=1,n_channels=1)
+    classifier_fn.load_state_dict(torch.load(model_path,map_location="cpu"))
     classifier_fn = classifier_fn.cuda()
     return classifier_fn
 
@@ -222,9 +104,10 @@ def choose(model_path, data_path, tau=0.2):
         classifier_fn.eval()
         for i, (image, label, indexs) in enumerate(dataloader):
             image, label = image.cuda(), label.cuda()
-            pred = (classifier_fn(image, torch.zeros(image.shape[0]).cuda()).sigmoid() > 0.5).float()
+            pred = (classifier_fn(image).sigmoid()>0.5).float()
             label = label.float()
             dices = dice_loss(pred, label).tolist()
+            print(dices)
             j = 0
             for (dice, index) in zip(dices, indexs):
                 if_good = dice < tau
@@ -235,14 +118,15 @@ def choose(model_path, data_path, tau=0.2):
                 j += 1
     turn = torchvision.transforms.ToPILImage()
     print(f"{len(pass_list) / (len(pass_list) + len(no_pass_list))}")
-    for i in range(0, len(pass_list)):
-        image = pass_list[i][0].cpu()
-        mask = pass_list[i][1].cpu()
-        image = turn(image)
-        mask = turn(mask)
-        image.save(f"./stage4_tau_0.5/image_{i}.png")
-        mask.save(f"./stage4_tau_0.5/mask_{i}.png")
+    for i in range(len(pass_list)):
+        if i < 500:
+            image = pass_list[i][0].cpu()
+            mask = pass_list[i][1].cpu()
+            image = turn(image)
+            mask = turn(mask)
+            image.save(f"./stage5_tau_0.5/image_{i}.png")
+            mask.save(f"./stage5_tau_0.5/mask_{i}.png")
 
 
 if __name__ == "__main__":
-    choose("/home/Bigdata/mtt_distillation_ckpt/COVID19/stage3/stage3_model_5000.pt", "./stage3_tau_0.5", 0.2)
+    choose("/home/Bigdata/mtt_distillation_ckpt/COVID19/imagenette/covid19_NO_ZCA/Unet/unet_for_fid.pt", "./stage4_tau_0.5", 0.05)

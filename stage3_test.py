@@ -25,7 +25,7 @@ parser.add_argument('--num_classes_1', type=int, default=2)
 parser.add_argument('--num_classes_2', type=int, default=-1)
 parser.add_argument('--cuda_devices', type=str, default="0", help="data parallel training")
 parser2 = copy.deepcopy(parser)
-scale_tau = 1
+scale_tau = 0.5
 
 def str2bool(v):
     """
@@ -188,7 +188,6 @@ label2 = None
 model_kwargs = {"y1": label1, "y2": label2}
 
 # TODO: III. define condition
-tau = 1.0
 condition = None
 
 # TODO: IV. define unconditional_condition
@@ -309,7 +308,7 @@ betas = torch.from_numpy(get_named_beta_schedule("linear", 1000)).cuda()
 noise_schedule = NoiseScheduleVP(schedule='discrete', betas=betas)
 image_shape = (BATCHSIZE, 1, 256, 256)
 
-for j in range(0, 500, args.batch_size):
+for j in range(0, 1000, args.batch_size):
     label2 = None
     model_kwargs = {"y1": label1, "y2": label2}
     model_fn = model_wrapper(
@@ -393,5 +392,5 @@ for j in range(0, 500, args.batch_size):
         sub_image = sub_image.cpu().permute(1, 2, 0).numpy()
         sub_label = (sub_label / 2 + 0.5).clamp(0, 1)
         sub_label = sub_label.cpu().permute(1, 2, 0).numpy()
-        numpy_to_pil(sub_image)[0].save(f"stage3_tau_1/image_{j + i}.png")
-        numpy_to_pil(sub_label)[0].save(f"stage3_tau_1/mask_{j + i}.png")
+        numpy_to_pil(sub_image)[0].save(f"stage3_tau_0.5_tmp/image_{j + i}.png")
+        numpy_to_pil(sub_label)[0].save(f"stage3_tau_0.5_tmp/mask_{j + i}.png")

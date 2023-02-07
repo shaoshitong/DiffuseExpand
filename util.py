@@ -361,7 +361,8 @@ def psnr(target, ref):
     diff = F.mse_loss(target, ref)
     return 10 * torch.log10(1.0 / diff)
 
-def epoch(mode, dataloader, net, optimizer,scheduler,iter, scaler, criterion, args, texture=False):
+
+def epoch(mode, dataloader, net, optimizer, scheduler, iter, scaler, criterion, args, texture=False):
     loss_avg, acc_avg, num_exp = 0, 0, 0
     net = net.to(args.device)
     if mode == 'train':
@@ -383,7 +384,7 @@ def epoch(mode, dataloader, net, optimizer,scheduler,iter, scaler, criterion, ar
             output = net(img)
         output = output.float()
         loss = criterion(output, lab)
-        acc = psnr(torch.sigmoid(output/0.05),lab).item()
+        acc = psnr(torch.sigmoid(output / 0.05), lab).item()
         # acc = psnr(output,lab).item()
         loss_avg += loss.item() * n_b
         acc_avg += acc * n_b
@@ -397,12 +398,64 @@ def epoch(mode, dataloader, net, optimizer,scheduler,iter, scaler, criterion, ar
             scaler.step(optimizer)
             scaler.update()
             scheduler.step(iter)
-            iter+=1
+            iter += 1
 
     loss_avg /= num_exp
     acc_avg /= num_exp
 
     return loss_avg, acc_avg
+
+
+def epoch2(mode, dataloader, net, optimizer, scheduler, iter, scaler, criticion, criticion_dice, args, texture=False):
+    loss_avg, dice_avg, psnr_avg, num_exp = 0, 0, 0, 0
+    net = net.to(args.device)
+    if mode == 'train':
+        net.train()
+    else:
+        net.eval()
+    for i_batch, datum in enumerate(dataloader):
+        img = datum[0].float().to(args.device)
+        lab = datum[1].float().to(args.device)
+        if mode == "train" and texture:
+            img = torch.cat([torch.stack([torch.roll(im, (torch.randint(args.im_size[0] * args.canvas_size, (1,)),
+                                                          torch.randint(args.im_size[0] * args.canvas_size, (1,))),
+                                                     (1, 2))[:, :args.im_size[0], :args.im_size[1]] for im in img]) for
+                             _ in range(args.canvas_samples)])
+            lab = torch.cat([lab for _ in range(args.canvas_samples)])
+
+        n_b = lab.shape[0]
+        with torch.cuda.amp.autocast():
+            output = net(img)
+        output = output.float()
+        if mode == "train":
+            _dice = criticion_dice(torch.sigmoid(output), lab)
+        else:
+            _dice = criticion_dice((torch.sigmoid(output)>0.5).float(), lab)
+        loss = criticion(output, lab) + _dice
+        a_psnr = psnr((torch.sigmoid(output)>0.5).float(), lab).item()
+        a_dice = _dice.item()
+
+        # acc = psnr(output,lab).item()
+        loss_avg += loss.item() * n_b
+        dice_avg += a_dice * n_b
+        psnr_avg += a_psnr * n_b
+        num_exp += n_b
+
+        if mode == 'train':
+            optimizer.zero_grad()
+            scaler.scale(loss).backward()
+            # scaler.unscale_(optimizer)
+            # nn.utils.clip_grad_value_(net.parameters(), 1.)
+            scaler.step(optimizer)
+            scaler.update()
+            scheduler.step(iter)
+            iter += 1
+
+    loss_avg /= num_exp
+    dice_avg /= num_exp
+    psnr_avg /= num_exp
+
+    return loss_avg, dice_avg, psnr_avg
 
 
 def evaluate_synset(it_eval, net, images_train, labels_train, testloader, args, return_loss=False, texture=False):
@@ -437,7 +490,7 @@ def evaluate_synset(it_eval, net, images_train, labels_train, testloader, args, 
     time_train = time.time() - start
 
     print('%s Evaluate_%02d: epoch = %04d train time = %d s train loss = %.6f train acc = %.4f, test acc = %.4f' % (
-    get_time(), it_eval, Epoch, int(time_train), loss_train, acc_train, acc_test))
+        get_time(), it_eval, Epoch, int(time_train), loss_train, acc_train, acc_test))
 
     if return_loss:
         return net, acc_train_list, acc_test, loss_train_list, loss_test
