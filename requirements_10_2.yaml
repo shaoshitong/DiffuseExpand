@@ -107,6 +107,7 @@ dependencies:
     - opencv-python
     - SimpleITK
     - torchxrayvision
+    - albumentations
     - sklearn
     - matplotlib
     - timm
