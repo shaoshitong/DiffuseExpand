@@ -48,12 +48,12 @@ class PairDatset(Dataset):
         image, mask = Image.open(image_path).convert("L"), Image.open(mask_path).convert("L")
         image, mask = self.turn(image), self.turn(mask)
         mask = (mask > 0.5).float()
-        # return image,mask
+        return image,mask
         return self.apply_transforms(image, mask, self.data_aug)
 
 
 def main(args):
-    with  open("./outputs/"+f"{args.generate_data_path[2:]}"+f"_no{random.random()}.txt","w") as ff:
+    with  open("./outputs/"+f"{args.generate_data_path[2:]}"+f"_woaug_no{random.random()}.txt","w") as ff:
         args.dsa = True if args.dsa == 'True' else False
         args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         args.dsa_param = ParamDiffAug()
@@ -63,8 +63,8 @@ def main(args):
             "COVID19", ], "The target of segmentation dataset distillation must be segmentation dataset!"
         dst_train_1 = PairDatset("./origin/")
         dst_train_2 = PairDatset(args.generate_data_path)
-        # dst_train = ConcatDataset([dst_train_1, dst_train_2])
-        dst_train = dst_train_1
+        dst_train = ConcatDataset([dst_train_1, dst_train_2])
+        # dst_train = dst_train_1
 
         # print('\n================== Exp %d ==================\n '%exp)
         print('Hyper-parameters: \n', args.__dict__)

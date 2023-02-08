@@ -35,14 +35,17 @@ class PairDatset(Dataset):
         for root, dirs, files in os.walk(data_path):
             for file in files:
                 path = str(os.path.join(self.data_path, file))
+
                 if file.startswith("image_"):
                     self.images.append(path)
                 elif file.startswith("mask_"):
                     self.masks.append(path)
                 else:
                     continue
-        self.indexs = [i for i in range(len(self.images))]
-
+        import re
+        self.indexs = [re.findall(r"\d+",str(self.images[i]))[-1] for i in range(len(self.images))]
+        # print(self.indexs)
+        # exit(-1)
     def __len__(self):
         return len(self.indexs)
 
@@ -124,9 +127,9 @@ def choose(model_path, data_path, tau=0.2):
             mask = pass_list[i][1].cpu()
             image = turn(image)
             mask = turn(mask)
-            image.save(f"./stage5_tau_0.5/image_{i}.png")
-            mask.save(f"./stage5_tau_0.5/mask_{i}.png")
+            image.save(f"./stage5_tau_0.333/image_{i}.png")
+            mask.save(f"./stage5_tau_0.333/mask_{i}.png")
 
 
 if __name__ == "__main__":
-    choose("/home/Bigdata/mtt_distillation_ckpt/COVID19/imagenette/covid19_NO_ZCA/Unet/unet_for_fid.pt", "./stage4_tau_0.5", 0.05)
+    choose("/home/Bigdata/mtt_distillation_ckpt/COVID19/imagenette/covid19_NO_ZCA/Unet/unet_for_fid.pt", "./a100/stage3_tau_0.333_tmp", 0.065)

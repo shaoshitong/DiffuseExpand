@@ -4,8 +4,6 @@ Train a noised image classifier on Segmentation Dataset.
 
 import argparse
 import os
-
-import PIL.Image
 import blobfile as bf
 import torch
 import torch.distributed as dist
@@ -23,14 +21,14 @@ from backbone.fp16_util import MixedPrecisionTrainer
 parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
 parser.add_argument('--dataset', type=str, default='COVID19', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
-parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
+parser.add_argument('--learn_rate', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--batch_size', type=int, default=4, help='batch size for training networks')
 parser.add_argument('--data_path', type=str,
-                    default='/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/images/',
+                    default='./covid-chestxray-dataset/images/',
                     help='dataset path')
 parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
 parser.add_argument('--csv_path', type=str,
-                    default="/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/metadata.csv")
+                    default="./covid-chestxray-dataset/metadata.csv")
 parser.add_argument('--save_path', type=str, default="./stage2")
 parser.add_argument('--unet_ckpt_path', type=str,
                     default="/home/sst/product/diffusion-model-learning/demo/256x256_diffusion.pt")
@@ -185,15 +183,6 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
     assert args.csv_path != "no", "COVID-19 Segmentation task need csv metadata!"
     dst = COVID19Dataset(imgpath=args.data_path, csvpath=args.csv_path, semantic_masks=True)
     dst = clean_dataset(dst)
-    # for i,(image,cond) in enumerate(dst):
-    #     turn = torchvision.transforms.ToPILImage()
-    #     a = turn(image)
-    #     b = turn(cond)
-    #     a.save(f"origin/image_{i}.png")
-    #     b.save(f"origin/mask_{i}.png")
-    #     print(i)
-    # exit(-1)
-
     from sklearn.model_selection import StratifiedShuffleSplit
     labels = [0 for i in range(len(dst))]
     ss = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=0)
@@ -243,27 +232,7 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
 
     # TODO: build a sampler (default is uniform)
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
-    # turn = torchvision.transforms.ToTensor()
-    # image_0 = PIL.Image.open("outputs/image_0.png")
-    # mask_0 = PIL.Image.open("outputs/mask_0.png")
-    # image_1 = PIL.Image.open("outputs/image_1.png")
-    # mask_1 = PIL.Image.open("outputs/mask_1.png")
-    # image_2 = PIL.Image.open("outputs/image_2.png")
-    # mask_2 = PIL.Image.open("outputs/mask_2.png")
-    # image_0 = turn(image_0)
-    # image_1 = turn(image_1)
-    # image_2 = turn(image_2)
-    # mask_0 = turn(mask_0)
-    # mask_1 = turn(mask_1)
-    # mask_2 = turn(mask_2)
-    # batch = torch.stack([image_0,image_1,image_2,mask_0,mask_1,mask_2],0).cuda()
-    # t, _ = schedule_sampler.sample(batch.shape[0], gpu)
-    # t[t>200] = (t[t>200]/10).long()
-    # batch = diffusion.q_sample(batch, t)
-    # turn = torchvision.transforms.ToPILImage()
-    # for i in range(batch.shape[0]):
-    #     turn(batch[i]).save(f"noisy_{'image' if i<3 else 'mask'}_{i%3}.png")
-    # exit(-1)
+
     # TODO: training
     print("begin training....")
     mp_trainer = MixedPrecisionTrainer(
@@ -305,29 +274,27 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
                 split_microbatches(args.microbatch, batch, labels, t)
         ):
             logits = model(sub_batch, timesteps=sub_t)
-            print(logits.mean(), sub_labels.mean())
             diceloss = dice_loss(logits.sigmoid(), sub_labels)
-            mseloss = F.mse_loss(logits.sigmoid(), sub_labels)
+            mseloss = F.l1_loss(logits.sigmoid(), sub_labels)
             loss = diceloss + mseloss
             losses = {}
             losses[f"{prefix}_dice_loss"] = diceloss.detach().item()
-            losses[f"{prefix}_mse_loss"] = mseloss.detach().item()
+            losses[f"{prefix}_l1_loss"] = mseloss.detach().item()
             losses[f"{prefix}_psnr_loss"] = psnr_loss(logits.sigmoid(), sub_labels).detach().item()
-            print(losses)
             loss = loss.mean()
             if loss.requires_grad:
                 if i == 0:
                     mp_trainer.zero_grad(opt)
                 mp_trainer.backward(loss * len(sub_batch) / len(batch))
             return losses
-
-    for step in range(int(args.iterations // len(train_loader))):
-        for i, (batch, cond2) in enumerate(train_loader):
-            print(f"step is {step * len(train_loader) + i}")
+    for step in range(int(args.iterations//len(train_loader))):
+        for i,(batch,cond2) in enumerate(train_loader): 
+            if gpu==0:
+                print(f"step is {step*len(train_loader)+i}")
             if args.anneal_lr:
                 set_annealed_lr(opt, args.lr, (step) / args.iterations)
 
-            forward_backward_log([batch, cond2])
+            forward_backward_log([batch,cond2])
             mp_trainer.optimize(opt)
             if (
                     step
@@ -336,21 +303,22 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
             ):
                 print("saving model...")
                 save_model(mp_trainer, opt, step)
-        total_loss = {"val_dice_loss": 0, "val_psnr_loss": 0, "val_mse_loss": 0}
-        for i, (batch, cond2) in enumerate(test_loader):
+        total_loss = {"val_dice_loss":0,"val_psnr_loss":0,"val_l1_loss":0}
+        for i,(batch,cond2) in enumerate(test_loader):
             with torch.no_grad():
                 with model.no_sync():
                     model.eval()
-                    losses = forward_backward_log([batch, cond2], prefix="val")
+                    losses = forward_backward_log([batch,cond2], prefix="val")
                     for key in total_loss.keys():
                         total_loss[key] += losses[key]
                     model.train()
         for key in total_loss.keys():
             total_loss[key] /= len(test_loader)
-        print(total_loss)
+        if gpu==0:
+            print(total_loss)
 
     if dist.get_rank() == 0:
-        save_model(mp_trainer, opt, args.iterations, args.save_path)
+        save_model(mp_trainer, opt, args.iterations,args.save_path)
     dist.barrier()
 
 
@@ -362,6 +330,7 @@ def set_annealed_lr(opt, base_lr, frac_done):
 
 def save_model(mp_trainer, opt, step, save_path):
     if dist.get_rank() == 0:
+        global args
         torch.save(
             mp_trainer.master_params,
             os.path.join(save_path, f"stage3_model_{step}.pt"),
