@@ -7,11 +7,13 @@ from util import get_dataset, get_network, get_daparam, \
     TensorDataset, epoch2, ParamDiffAug
 from utils import DiceLoss
 import torchvision
+import numpy as np
 from timm.scheduler import CosineLRScheduler
 from torch.utils.data import DataLoader, Dataset, ConcatDataset
 import warnings
 from utils.covid19_dataset import STNAugment
 import random
+
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
@@ -33,6 +35,7 @@ class PairDatset(Dataset):
         self.indexs = [i for i in range(len(self.images))]
         self.data_aug = STNAugment()
 
+
     def apply_transforms(self, image, mask, transform, seed=None):
         if transform is not None:
             turn_list = [image, mask]
@@ -47,13 +50,14 @@ class PairDatset(Dataset):
         mask_path = os.path.join(self.data_path, "mask_" + str(self.indexs[item]) + ".png")
         image, mask = Image.open(image_path).convert("L"), Image.open(mask_path).convert("L")
         image, mask = self.turn(image), self.turn(mask)
+        # image, mask = self.cutmix(image.float(), mask.float())
+        return image, mask
         mask = (mask > 0.5).float()
-        return image,mask
         return self.apply_transforms(image, mask, self.data_aug)
 
 
 def main(args):
-    with  open("./outputs/"+f"{args.generate_data_path[2:]}"+f"_woaug_no{random.random()}.txt","w") as ff:
+    with  open("./outputs/" + f"{args.generate_data_path[2:]}" + f"_cutmix_no{random.random()}.txt", "w") as ff:
         args.dsa = True if args.dsa == 'True' else False
         args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         args.dsa_param = ParamDiffAug()
@@ -119,10 +123,17 @@ def main(args):
                                                      scheduler=scheduler, iter=iter, scaler=scaler,
                                                      criticion=criterion, criticion_dice=criterion_dice, args=args)
             iter += len(trainloader)
-            log = "Epoch: {}\tIter: {}\tLr: {}\tTrain PSNR: {}\tTrain DICE: {}\tTest PSNR: {}\tTest DICE: {}".format(e, iter, scheduler._get_lr(iter)[0],train_psnr, train_dice,
-                                                                                    test_psnr, test_dice)
+            log = "Epoch: {}\tIter: {}\tLr: {}\tTrain PSNR: {}\tTrain DICE: {}\tTest PSNR: {}\tTest DICE: {}".format(e,
+                                                                                                                     iter,
+                                                                                                                     scheduler._get_lr(
+                                                                                                                         iter)[
+                                                                                                                         0],
+                                                                                                                     train_psnr,
+                                                                                                                     train_dice,
+                                                                                                                     test_psnr,
+                                                                                                                     test_dice)
             print(log)
-            ff.write(log+"\n")
+            ff.write(log + "\n")
     #
     # print("Saving {}".format(os.path.join(save_dir, "unet_for_fid.pt")))
     # torch.save(teacher_net.state_dict(), os.path.join(save_dir, "unet_for_fid.pt"))

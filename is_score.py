@@ -134,7 +134,6 @@ def get_activations(files, model, batch_size=50, dims=2048, device='cpu',
         batch = batch.to(device)
 
         with torch.no_grad():
-            print(batch[0])
             pred = model(batch)[0]
 
         # If model output is not scalar, apply global spatial average pooling.
@@ -227,30 +226,35 @@ def calculate_activation_statistics(files, model, batch_size=50, dims=2048,
     -- sigma : The covariance matrix of the activations of the pool_3 layer of
                the inception model.
     """
+    from scipy.stats import entropy
     act = get_activations(files, model, batch_size, dims, device, num_workers)
-    mu = np.mean(act, axis=0)
-    sigma = np.cov(act, rowvar=False)
-    return mu, sigma
+    act = 1 / (1 + np.exp(-act))
+    act = act.reshape((-1,1))
+    act = np.concatenate([act,1-act],1)
+    py = np.mean(act,0)
+    scores = []
+    for i in range(act.shape[0]):
+        pyx = act[i, :]  # conditional probability
+        scores.append(entropy(pyx, py))  # compute divergence
+    _is = np.exp(np.mean(scores))
+    return _is
 
 
 def compute_statistics_of_path(path, model, batch_size, dims, device, startswith,
                                num_workers=1):
-    if path.endswith('.npz'):
-        with np.load(path) as f:
-            m, s = f['mu'][:], f['sigma'][:]
-    else:
-        path = pathlib.Path(path)
-        files = sorted([file for ext in IMAGE_EXTENSIONS
-                       for file in path.glob('*.{}'.format(ext))])
-        new_files = []
-        for file in files:
-            _file = str(file)
-            if _file.split("/")[-1].startswith(startswith):
-                new_files.append(_file)
-        m, s = calculate_activation_statistics(new_files, model, batch_size,
-                                               dims, device, num_workers)
 
-    return m, s
+    path = pathlib.Path(path)
+    files = sorted([file for ext in IMAGE_EXTENSIONS
+                    for file in path.glob('*.{}'.format(ext))])
+    new_files = []
+    for file in files:
+        _file = str(file)
+        if _file.split("/")[-1].startswith(startswith):
+            new_files.append(_file)
+    _is= calculate_activation_statistics(new_files, model, batch_size,
+                                           dims, device, num_workers)
+
+    return _is
 
 
 def calculate_fid_given_paths(paths, batch_size, device, dims, startswith, num_workers=1):
@@ -259,17 +263,15 @@ def calculate_fid_given_paths(paths, batch_size, device, dims, startswith, num_w
         if not os.path.exists(p):
             raise RuntimeError('Invalid path: %s' % p)
     from backbone import UNetForFID
-    param = torch.load("/home/Bigdata/mtt_distillation_ckpt/COVID19/imagenette/covid19_NO_ZCA/Unet/unet_for_fid.pt",map_location="cpu")
+    param = torch.load("/home/Bigdata/mtt_distillation_ckpt/COVID19/imagenette/covid19_NO_ZCA/Unet/unet_for_fid.pt",
+                       map_location="cpu")
     model = UNetForFID(n_channels=1, n_classes=1)
     model.load_state_dict(param)
     model = model.cuda()
-    m1, s1 = compute_statistics_of_path(paths[0], model, batch_size,
+    _is1 = compute_statistics_of_path(paths[0], model, batch_size,
                                         dims, device, startswith, num_workers)
-    m2, s2 = compute_statistics_of_path(paths[1], model, batch_size,
-                                        dims, device, startswith, num_workers)
-    fid_value = calculate_frechet_distance(m1, s1, m2, s2)
 
-    return fid_value
+    return _is1
 
 
 def save_fid_stats(paths, batch_size, device, dims, num_workers=1):
@@ -317,13 +319,13 @@ def main():
         save_fid_stats(args.path, args.batch_size, device, args.dims, num_workers)
         return
 
-    fid_value = calculate_fid_given_paths(args.path,
+    is_value = calculate_fid_given_paths(args.path,
                                           args.batch_size,
                                           device,
                                           args.dims,
                                           args.startswith,
                                           num_workers)
-    print('FID: ', fid_value)
+    print('IS: ', is_value)
 
 
 if __name__ == '__main__':

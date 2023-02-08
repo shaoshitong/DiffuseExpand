@@ -1,4 +1,5 @@
 from .covid19_dataset import CleanCOVID19Dataset, COVID19Dataset, clean_dataset, generate_clean_dataset
+from .isic_dataset import GenerateSkinDataset
 from .slicing import slicing
 from .dist_utils import setup_dist, set_device
 from .create_diffusion_model import create_gaussian_diffusion, create_model, create_model_and_diffusion, \
@@ -12,6 +13,7 @@ from .losses import PSNRLoss,DiceLoss
 __all__ = [
     "COVID19Dataset",
     "CleanCOVID19Dataset",
+    "GenerateSkinDataset",
     "clean_dataset",
     "generate_clean_dataset",
     "slicing",

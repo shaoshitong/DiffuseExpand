@@ -85,6 +85,7 @@ def create_argparser():
         lr=1e-4,
         fp16_scale_growth=1e-3,
         lr_anneal_steps=30000,
+        isic=False,
     )
 
     diffusion_defaults = dict(
@@ -165,18 +166,35 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
 
     # TODO: build dataset
     print("build dataset....")
-    from utils.covid19_dataset import COVID19Dataset, generate_clean_dataset
-    assert args.csv_path != "no", "COVID-19 Segmentation task need csv metadata!"
-    dst = COVID19Dataset(imgpath=args.data_path, csvpath=args.csv_path, semantic_masks=True)
-    train_set = generate_clean_dataset(dst)
-    train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
-    train_loader = DataLoader(
-        train_set,
-        batch_size=args.batch_size,
-        sampler=train_sampler,
-        num_workers=2,
-        pin_memory=(torch.cuda.is_available()),
-    )
+    if args.dataset == "COVID19":
+        from utils.covid19_dataset import COVID19Dataset, generate_clean_dataset
+        assert args.csv_path != "no", "COVID-19 Segmentation task need csv metadata!"
+        dst = COVID19Dataset(imgpath=args.data_path, csvpath=args.csv_path, semantic_masks=True)
+        train_set = generate_clean_dataset(dst)
+        train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
+        train_loader = DataLoader(
+            train_set,
+            batch_size=args.batch_size,
+            sampler=train_sampler,
+            num_workers=2,
+            pin_memory=(torch.cuda.is_available()),
+        )
+    elif args.dataset == "ISIC":
+        from utils.isic_dataset import SkinDataset
+        image_root = '{}/data_train.npy'.format(args.data_path)
+        gt_root = '{}/mask_train.npy'.format(args.data_path)
+        train_set = SkinDataset(image_root=image_root, gt_root=gt_root)
+        train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
+        train_loader = DataLoader(
+            train_set,
+            batch_size=args.batch_size,
+            sampler=train_sampler,
+            num_workers=2,
+            pin_memory=(torch.cuda.is_available()),
+        )
+    else:
+        raise NotImplementedError
+
 
     NAME = [
         "image_size",
@@ -204,6 +222,7 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
         "use_new_attention_order",
         "num_classes_1",
         "num_classes_2",
+        "isic",
     ]
     # TODO: Define UNet and diffusion scheduler
     args.num_classes_2 = int(len(train_set)//2)
@@ -242,6 +261,8 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
 
 def main():
     args = create_argparser().parse_args()
+    if args.dataset == "ISIC":
+        args.isic = True
     parallel_function = setup_dist(args)
     parallel_function(main_worker)
 

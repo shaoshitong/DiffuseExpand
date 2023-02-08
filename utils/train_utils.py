@@ -12,8 +12,7 @@ from torch.optim import AdamW
 from backbone.nn import update_ema
 from .schedule_sampler import LossAwareSampler, UniformSampler
 from backbone.fp16_util import MixedPrecisionTrainer
-from .dist_utils import sync_params
-
+from utils.covid19_dataset import GenerateCOVID19Dataset
 # For ImageNet experiments, this was a good default value.
 # We found that the lg_loss_scale quickly climbed to
 # 20-21 within the first ~1K steps of training.
@@ -164,7 +163,10 @@ class TrainLoop:
     def forward_backward(self, batch, cond1, cond2):
         self.mp_trainer.zero_grad(self.opt)
         for i in range(0, batch.shape[0], self.microbatch):
-            micro = batch[i: i + self.microbatch].cuda(self.gpu)*2-1
+            if isinstance(self.train_data.dataset,GenerateCOVID19Dataset):
+                micro = batch[i: i + self.microbatch].cuda(self.gpu) * 2 - 1
+            else:
+                micro = batch[i: i + self.microbatch].cuda(self.gpu)
             micro_cond = {"y1": cond1[i: i + self.microbatch].cuda(self.gpu),
                           "y2": cond2[i: i + self.microbatch].cuda(self.gpu)}
             last_batch = (i + self.microbatch) >= batch.shape[0]
@@ -199,7 +201,7 @@ class TrainLoop:
             return
         frac_done = (self.step + self.resume_step) / self.lr_anneal_steps
         lr = self.lr * (1 - frac_done)
-        if self.gpu==0 and self.step%100==0:
+        if self.gpu == 0 and self.step % 100 == 0:
             print(f"now lr is {lr}")
         for param_group in self.opt.param_groups:
             param_group["lr"] = lr
@@ -213,7 +215,7 @@ class TrainLoop:
             if self.gpu == 0:
                 state_dict = params
                 print(f"saving model {rate}...")
-                filename = f"model_stage2_{self.resume_step+self.step}.pt"
+                filename = f"model_stage2_{self.resume_step + self.step}.pt"
                 th.save(state_dict, os.path.join(self.save_path, filename))
 
         save_checkpoint(0, self.mp_trainer.model.state_dict())

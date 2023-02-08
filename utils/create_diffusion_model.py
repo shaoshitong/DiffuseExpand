@@ -24,6 +24,7 @@ def create_model(
         use_new_attention_order=False,
         num_classes_1=None,
         num_classes_2=None,
+        isic=False,
 ):
     if channel_mult == "":
         if image_size == 512:
@@ -45,9 +46,9 @@ def create_model(
 
     return UNetModel(
         image_size=image_size,
-        in_channels=1,
+        in_channels=(1 if not isic else 3),
         model_channels=num_channels,
-        out_channels=(1 if not learn_sigma else 2),
+        out_channels=((1 if not learn_sigma else 2) if not isic else (3 if not learn_sigma else 6)),
         num_res_blocks=num_res_blocks,
         attention_resolutions=tuple(attention_ds),
         dropout=dropout,
@@ -165,6 +166,7 @@ def create_model_and_diffusion(
         use_new_attention_order,
         num_classes_1,
         num_classes_2,
+        isic,
 ):
     model = create_model(
         image_size,
@@ -185,6 +187,7 @@ def create_model_and_diffusion(
         use_new_attention_order=use_new_attention_order,
         num_classes_1=num_classes_1,
         num_classes_2=num_classes_2,
+        isic=isic,
     )
     diffusion = create_gaussian_diffusion(
         steps=diffusion_steps,

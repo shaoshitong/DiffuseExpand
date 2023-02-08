@@ -50,6 +50,31 @@ class Config:
 config = Config()
 
 
+@torch.no_grad()
+def cutmix(
+        x: torch.tensor, y: torch.tensor = None, cutmix_prob: int = 0.1, beta: int = 0.3,
+) -> torch.tensor:
+    if y == None:
+        y = torch.zeros_like(x).to(x.device)
+    if np.random.rand() > cutmix_prob:
+        return x, y
+    N, _, H, W = x.shape
+    indices = torch.randperm(N).to(x.device)
+    x1 = x[indices, :, :, :]
+    y1 = y[indices, :, :, :]
+    lam = np.random.beta(beta, beta)
+    rate = np.sqrt(1 - lam)
+    cut_x, cut_y = int((H * rate) // 2), int((W * rate) // 2)
+    if cut_x == H // 2 or cut_y == W // 2:
+        return x, y
+    cx, cy = int(np.random.randint(cut_x, H - cut_x)), int(np.random.randint(cut_y, W - cut_x))
+    bx1, bx2 = cx - cut_x, cx + cut_x
+    by1, by2 = cy - cut_y, cy + cut_y
+    x[:, :, bx1:bx2, by1:by2] = x1[:, :, bx1:bx2, by1:by2].clone()
+    y[:, :, bx1:bx2, by1:by2] = y1[:, :, bx1:bx2, by1:by2].clone()
+    return x, (y > 0.5).float()
+
+
 def get_dataset(dataset, data_path, batch_size=1, subset="imagenette", args=None):
     class_map = None
     loader_train_dict = None
@@ -416,6 +441,8 @@ def epoch2(mode, dataloader, net, optimizer, scheduler, iter, scaler, criticion,
     for i_batch, datum in enumerate(dataloader):
         img = datum[0].float().to(args.device)
         lab = datum[1].float().to(args.device)
+        if mode == "train":
+            img, lab = cutmix(img, lab)
         if mode == "train" and texture:
             img = torch.cat([torch.stack([torch.roll(im, (torch.randint(args.im_size[0] * args.canvas_size, (1,)),
                                                           torch.randint(args.im_size[0] * args.canvas_size, (1,))),
