@@ -43,7 +43,6 @@ def create_model(
     attention_ds = []
     for res in attention_resolutions.split(","):
         attention_ds.append(image_size // int(res))
-
     return UNetModel(
         image_size=image_size,
         in_channels=(1 if not isic else 3),
@@ -107,9 +106,9 @@ def create_gaussian_diffusion(
     )
 
 
-def create_classifier():
+def create_classifier(isic=False):
     image_size = 256
-    in_channels = 1
+    in_channels = 1 if not isic else 3
     model_channels = 64
     out_channels = 1
     num_res_blocks = 1
@@ -221,8 +220,9 @@ def create_classifier_and_diffusion(
         rescale_learned_sigmas,
         num_classes_1,
         num_classes_2,
+        isic
 ):
-    classifier = create_classifier()
+    classifier = create_classifier(isic)
     diffusion = create_gaussian_diffusion(
         steps=diffusion_steps,
         learn_sigma=learn_sigma,

@@ -19,7 +19,7 @@ from utils import set_device, setup_dist, create_model_and_diffusion, create_nam
 from backbone.fp16_util import MixedPrecisionTrainer
 
 parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
-parser.add_argument('--dataset', type=str, default='COVID19', help='dataset')
+parser.add_argument('--dataset', type=str, default='ISIC', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--batch_size', type=int, default=4, help='batch size for training networks')
@@ -179,10 +179,18 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
 
     # TODO: build dataset
     print("build dataset....")
-    from utils.covid19_dataset import COVID19Dataset, generate_clean_dataset, clean_dataset
-    assert args.csv_path != "no", "COVID-19 Segmentation task need csv metadata!"
-    dst = COVID19Dataset(imgpath=args.data_path, csvpath=args.csv_path, semantic_masks=True)
-    dst = clean_dataset(dst)
+    if args.dataset == "COVID19":
+        from utils.covid19_dataset import COVID19Dataset, clean_dataset
+        assert args.csv_path != "no", "COVID-19 Segmentation task need csv metadata!"
+        dst = COVID19Dataset(imgpath=args.data_path, csvpath=args.csv_path, semantic_masks=True)
+        dst = clean_dataset(dst)
+    elif args.dataset == "ISIC":
+        from utils.isic_dataset import GenerateSkinDataset
+        image_root = '{}/data_train.npy'.format(args.data_path)
+        gt_root = '{}/mask_train.npy'.format(args.data_path)
+        dst = GenerateSkinDataset(image_root=image_root, gt_root=gt_root)
+    else:
+        raise NotImplementedError
     from sklearn.model_selection import StratifiedShuffleSplit
     labels = [0 for i in range(len(dst))]
     ss = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=0)
@@ -223,7 +231,9 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
         "rescale_learned_sigmas",
         "num_classes_1",
         "num_classes_2",
+        "isic"
     ]
+
     # TODO: Define UNet and diffusion scheduler
     args.num_classes_2 = 1
     model, diffusion = create_classifier_and_diffusion(
@@ -302,7 +312,7 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
                     and not (step) % args.save_interval
             ):
                 print("saving model...")
-                save_model(mp_trainer, opt, step)
+                save_model(mp_trainer, opt, step,"./stage2/")
         total_loss = {"val_dice_loss":0,"val_psnr_loss":0,"val_l1_loss":0}
         for i,(batch,cond2) in enumerate(test_loader):
             with torch.no_grad():
@@ -333,12 +343,14 @@ def save_model(mp_trainer, opt, step, save_path):
         global args
         torch.save(
             mp_trainer.master_params,
-            os.path.join(save_path, f"stage3_model_{step}.pt"),
+            os.path.join(save_path, f"stage3_isic_model_{step}.pt"),
         )
 
 
 def main():
     args = create_argparser().parse_args()
+    if args.dataset == "ISIC":
+        args.isic = True
     parallel_function = setup_dist(args)
     parallel_function(main_worker)
 

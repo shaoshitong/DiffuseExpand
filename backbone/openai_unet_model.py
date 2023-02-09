@@ -478,7 +478,7 @@ class UNetModel(nn.Module):
 
         if self.num_classes_1 is not None and self.num_classes_2 is not None:
             self.label_emb_1 = nn.Embedding(num_classes_1, time_embed_dim)
-            self.label_emb_2 = nn.Sequential(nn.Conv2d(1,1,(3,3),(1,1),(1,1),bias=False),
+            self.label_emb_2 = nn.Sequential(nn.Conv2d(in_channels,1,(3,3),(1,1),(1,1),bias=False),
                                              nn.AdaptiveAvgPool2d((16,16)),
                                              nn.Flatten(),
                                              nn.Linear(256,time_embed_dim))
@@ -651,15 +651,16 @@ class UNetModel(nn.Module):
         ), "must specify y1 if and only if the model is class-conditional"
         hs = []
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
-
         if self.num_classes_1 is not None:
             assert y1.shape == (x.shape[0],)
             emb = emb + self.label_emb_1(y1)
 
         index = (y1 <= 0.).bool()
+        print(emb.shape,y2.shape,"emb_y2")
         if index.sum().item()>0:
             emb[index] = emb[index] + self.label_emb_2(y2[index])
         h = x.type(self.dtype).float()
+        print(h.shape,"h")
         for module in self.input_blocks:
             h = module(h, emb.half())
             hs.append(h)

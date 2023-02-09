@@ -56,6 +56,46 @@ class GenerateSkinDataset(data.Dataset):
         return self.size
 
 
+class SkinDataset(data.Dataset):
+    """
+    dataloader for skin lesion segmentation tasks
+    """
+
+    def __init__(self, image_root, gt_root):
+        self.images = np.load(image_root)
+        self.gts = np.load(gt_root)
+        self.size = len(self.images)
+
+        self.img_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406],
+                                 [0.229, 0.224, 0.225])
+        ])
+        self.gt_transform = transforms.Compose([
+            transforms.ToTensor()])
+
+        self.transform = A.Compose(
+            [
+                A.ShiftScaleRotate(shift_limit=0.15, scale_limit=0.15, rotate_limit=25, p=0.5, border_mode=0),
+                A.ColorJitter(),
+                A.HorizontalFlip(),
+                A.VerticalFlip()
+            ]
+        )
+
+    def __getitem__(self, index):
+        image = self.images[index]
+        gt = self.gts[index]
+        gt = gt / 255.0
+        transformed = self.transform(image=image, mask=gt)
+        image = self.img_transform(transformed['image'])
+        gt = self.gt_transform(transformed['mask'])
+        return image, (gt>0.5).float()
+
+    def __len__(self):
+        return self.size
+
+
 def get_loader(image_root, gt_root, batchsize, shuffle=True, num_workers=4, pin_memory=True):
     dataset = GenerateSkinDataset(image_root, gt_root)
     data_loader = data.DataLoader(dataset=dataset,

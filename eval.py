@@ -67,8 +67,8 @@ def main(args):
             "COVID19", ], "The target of segmentation dataset distillation must be segmentation dataset!"
         dst_train_1 = PairDatset("./origin/")
         dst_train_2 = PairDatset(args.generate_data_path)
-        dst_train = ConcatDataset([dst_train_1, dst_train_2])
-        # dst_train = dst_train_1
+        # dst_train = ConcatDataset([dst_train_1, dst_train_2])
+        dst_train = dst_train_1
 
         # print('\n================== Exp %d ==================\n '%exp)
         print('Hyper-parameters: \n', args.__dict__)

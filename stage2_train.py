@@ -180,10 +180,10 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
             pin_memory=(torch.cuda.is_available()),
         )
     elif args.dataset == "ISIC":
-        from utils.isic_dataset import SkinDataset
+        from utils.isic_dataset import GenerateSkinDataset
         image_root = '{}/data_train.npy'.format(args.data_path)
         gt_root = '{}/mask_train.npy'.format(args.data_path)
-        train_set = SkinDataset(image_root=image_root, gt_root=gt_root)
+        train_set = GenerateSkinDataset(image_root=image_root, gt_root=gt_root)
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
         train_loader = DataLoader(
             train_set,
