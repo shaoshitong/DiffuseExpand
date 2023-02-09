@@ -185,10 +185,10 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
         dst = COVID19Dataset(imgpath=args.data_path, csvpath=args.csv_path, semantic_masks=True)
         dst = clean_dataset(dst)
     elif args.dataset == "ISIC":
-        from utils.isic_dataset import GenerateSkinDataset
+        from utils.isic_dataset import SkinDataset
         image_root = '{}/data_train.npy'.format(args.data_path)
         gt_root = '{}/mask_train.npy'.format(args.data_path)
-        dst = GenerateSkinDataset(image_root=image_root, gt_root=gt_root)
+        dst = SkinDataset(image_root=image_root, gt_root=gt_root)
     else:
         raise NotImplementedError
     from sklearn.model_selection import StratifiedShuffleSplit
