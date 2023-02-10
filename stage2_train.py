@@ -20,11 +20,11 @@ parser.add_argument('--dataset', type=str, default='ISIC', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
 parser.add_argument('--batch_size', type=int, default=2, help='batch size for training networks')
-parser.add_argument('--data_path', type=str, default='/home/Bigdata/medical_dataset/ISIC2017', help='dataset path')
+parser.add_argument('--data_path', type=str, default='./isic_dataset', help='dataset path')
 parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
-parser.add_argument('--csv_path', type=str, default="/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/metadata.csv")
+parser.add_argument('--csv_path', type=str, default="./covid-chestxray-dataset/metadata.csv")
 parser.add_argument('--save_path', type=str, default="/home/Bigdata/mtt_distillation_ckpt/stage2")
-parser.add_argument('--unet_ckpt_path', type=str, default="/home/sst/product/diffusion-model-learning/demo/256x256_diffusion.pt")
+parser.add_argument('--unet_ckpt_path', type=str, default="./stage2/model_isic_stage2_30000.pt")
 parser.add_argument('--class_cond', type=bool, default=True)
 parser.add_argument('--num_classes_1', type=int, default=2)
 parser.add_argument('--num_classes_2', type=int, default=-1)
@@ -80,11 +80,11 @@ def create_argparser():
         resume_checkpoint=None,
         log_interval=10,
         eval_interval=5,
-        save_interval=100,
+        save_interval=1000,
         channel_mult="",
         lr=1e-4,
         fp16_scale_growth=1e-3,
-        lr_anneal_steps=30000,
+        lr_anneal_steps=5000,
         isic=False,
     )
 
