@@ -9,6 +9,7 @@ import enum
 import math
 
 import numpy as np
+import torch
 import torch as th
 
 from .losses import normal_kl, discretized_gaussian_log_likelihood
@@ -768,9 +769,9 @@ class GaussianDiffusion:
             model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start)
-            index = (model_kwargs["y1"]==1).bool()
-            if index.sum().item()>0:
-                noise[index] = th.randn(noise[index].shape[0],1,noise.shape[2],noise.shape[3]).expand(-1,noise[index].shape[1],-1,-1)
+            index = th.where(model_kwargs["y1"]==1)[0]
+            if index.shape[0]>0:
+                noise[index] = noise[index,0,:,:].clone().expand_as(noise[index])
         x_t = self.q_sample(x_start, t, noise=noise)
         terms = {}
 

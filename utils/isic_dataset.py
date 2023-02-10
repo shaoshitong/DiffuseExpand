@@ -36,7 +36,7 @@ class GenerateSkinDataset(data.Dataset):
         image = image / 255.0
         if_label = random.random() > 0.5
         if if_label:
-            return torch.from_numpy(gt), 1, torch.from_numpy(gt).expand(3,-1,-1)
+            return torch.from_numpy(gt).expand(3,-1,-1), 1, torch.from_numpy(gt).expand(3,-1,-1)
         else:
             return torch.from_numpy(image).permute(2,0,1), 0, torch.from_numpy(gt).expand(3,-1,-1)
 

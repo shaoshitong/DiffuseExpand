@@ -657,7 +657,7 @@ class UNetModel(nn.Module):
 
         index = (y1 <= 0.).bool()
         if index.sum().item()>0:
-            emb[index] = emb[index] + self.label_emb_2(y2[index])
+            emb[index] = emb[index] + self.label_emb_2(y2[index].float())
         h = x.type(self.dtype).float()
         for module in self.input_blocks:
             h = module(h, emb.half())
@@ -668,8 +668,9 @@ class UNetModel(nn.Module):
             h = module(h, emb)
         h = h.type(x.dtype)
         h = self.out(h)
-        if (~index).sum().item()>0:
-            h[~index] = h[~index].mean(1,keepdim=True).expand(-1,h[~index].shape[1],-1,-1)
+        index = th.where(y1== 1)[0]
+        if index.shape[0]>0:
+            h[index] = h[index].mean(1,keepdim=True).expand_as(h[index])
         return h
 
 
