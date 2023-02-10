@@ -166,7 +166,7 @@ class TrainLoop:
             if isinstance(self.train_data.dataset,GenerateCOVID19Dataset):
                 micro = batch[i: i + self.microbatch].cuda(self.gpu) * 2 - 1
             else:
-                micro = batch[i: i + self.microbatch].cuda(self.gpu)
+                micro = batch[i: i + self.microbatch].cuda(self.gpu) * 2 - 1
             micro_cond = {"y1": cond1[i: i + self.microbatch].cuda(self.gpu),
                           "y2": cond2[i: i + self.microbatch].cuda(self.gpu)}
             last_batch = (i + self.microbatch) >= batch.shape[0]

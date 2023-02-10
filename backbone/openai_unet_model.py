@@ -656,11 +656,9 @@ class UNetModel(nn.Module):
             emb = emb + self.label_emb_1(y1)
 
         index = (y1 <= 0.).bool()
-        print(emb.shape,y2.shape,"emb_y2")
         if index.sum().item()>0:
             emb[index] = emb[index] + self.label_emb_2(y2[index])
         h = x.type(self.dtype).float()
-        print(h.shape,"h")
         for module in self.input_blocks:
             h = module(h, emb.half())
             hs.append(h)
@@ -669,7 +667,10 @@ class UNetModel(nn.Module):
             h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb)
         h = h.type(x.dtype)
-        return self.out(h)
+        h = self.out(h)
+        if (~index).sum().item()>0:
+            h[~index] = h[~index].mean(1,keepdim=True).expand(-1,h[~index].shape[1],-1,-1)
+        return h
 
 
 class EncoderUNetModel(UNetModel):

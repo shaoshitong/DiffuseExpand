@@ -16,11 +16,11 @@ import numpy as np
 from utils import set_device, setup_dist, create_model_and_diffusion, create_named_schedule_sampler,TrainLoop
 
 parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
-parser.add_argument('--dataset', type=str, default='COVID19', help='dataset')
+parser.add_argument('--dataset', type=str, default='ISIC', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
 parser.add_argument('--batch_size', type=int, default=2, help='batch size for training networks')
-parser.add_argument('--data_path', type=str, default='/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/images/', help='dataset path')
+parser.add_argument('--data_path', type=str, default='/home/Bigdata/medical_dataset/ISIC2017', help='dataset path')
 parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
 parser.add_argument('--csv_path', type=str, default="/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/metadata.csv")
 parser.add_argument('--save_path', type=str, default="/home/Bigdata/mtt_distillation_ckpt/stage2")

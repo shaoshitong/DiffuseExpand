@@ -342,7 +342,7 @@ def save_model(mp_trainer, opt, step, save_path):
     if dist.get_rank() == 0:
         global args
         torch.save(
-            mp_trainer.master_params,
+            mp_trainer.model,
             os.path.join(save_path, f"stage3_isic_model_{step}.pt"),
         )
 

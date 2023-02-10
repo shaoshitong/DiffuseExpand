@@ -4,7 +4,8 @@ from utils import NoiseScheduleVP, model_wrapper, DPM_Solver
 import argparse
 from torch.utils.data import DataLoader
 from utils import create_model_and_diffusion
-import torch
+import torch,io
+import blobfile as bf
 
 parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
 parser.add_argument('--dataset', type=str, default='ISIC', help='dataset')
@@ -25,8 +26,9 @@ parser.add_argument('--num_classes_1', type=int, default=2)
 parser.add_argument('--num_classes_2', type=int, default=-1)
 parser.add_argument('--cuda_devices', type=str, default="0", help="data parallel training")
 parser2 = copy.deepcopy(parser)
-scale_tau = 0.5
-
+scale_tau = 0.05
+# TODO: V. define guidance_scale
+guidance_scale = 1.  # Nothing to do with uncond scenarios
 def str2bool(v):
     """
     https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse
@@ -160,6 +162,7 @@ NAME = [
     "use_new_attention_order",
     "num_classes_1",
     "num_classes_2",
+    "isic"
 ]
 
 # TODO: I. define model
@@ -194,8 +197,6 @@ condition = None
 # TODO: IV. define unconditional_condition
 unconditional_condition = None  # Nothing to do with guidance-classifier scenarios
 
-# TODO: V. define guidance_scale
-guidance_scale = 1.  # Nothing to do with uncond scenarios
 # TODO: VI. define classifier
 from utils import create_classifier_and_diffusion
 
@@ -283,6 +284,7 @@ NAME = [
     "rescale_learned_sigmas",
     "num_classes_1",
     "num_classes_2",
+    "isic",
 ]
 # TODO: Define UNet and diffusion scheduler
 args.num_classes_2 = 1
@@ -293,8 +295,7 @@ classifier_fn, _ = create_classifier_and_diffusion(
 model_path_2 = "./stage2/stage3_isic_model_5000.pt"
 if not os.path.exists(model_path_2):
     raise KeyError
-
-model_params = torch.load(model_path_2, map_location="cpu")
+model_params = torch.load(model_path_2, map_location="cpu").state_dict()
 classifier_fn.load_state_dict(model_params)
 classifier_fn = classifier_fn.cuda()
 classifier = lambda x, t, cond: cond(classifier_fn(x, t))
@@ -310,7 +311,7 @@ betas = torch.from_numpy(get_named_beta_schedule("linear", 1000)).cuda()
 noise_schedule = NoiseScheduleVP(schedule='discrete', betas=betas)
 image_shape = (BATCHSIZE, 3, 256, 256)
 
-for j in range(0, 1000, args.batch_size):
+for j in range(0,20, args.batch_size):
     label2 = None
     model_kwargs = {"y1": label1, "y2": label2}
     model_fn = model_wrapper(
@@ -320,7 +321,7 @@ for j in range(0, 1000, args.batch_size):
         model_kwargs=model_kwargs,
         guidance_type="uncond",
         condition=None,
-        guidance_scale=1,
+        guidance_scale=10,
         classifier_fn=None,
         classifier_kwargs={},
     )
@@ -335,15 +336,30 @@ for j in range(0, 1000, args.batch_size):
             skip_type="time_uniform",
             method="multistep",
         )
+        acc = torch.Tensor([0.2989 , 0.5870 ,0.1140])[None,:,None,None].cuda()
+        print(y_label)
+        y_label = (y_label).min(1,keepdim=True)[0].expand(-1,3,-1,-1)
+
     model_kwargs = {"y1": label1 * 0, "y2": torch.sign(y_label)}
     model_kwargs["y2"][model_kwargs["y2"] <= 0] = torch.Tensor([-1]).cuda()
     model_kwargs["y2"] = model_kwargs["y2"].cuda()
     # TODO: III. define condition
     import torch.nn.functional as F
 
-    def condition(x,y = (model_kwargs["y2"] > 0)):
-        sig_x = F.sigmoid(x/scale_tau)[y]
-        return torch.log(sig_x+1e-5).mean()
+    def condition(x,y = (model_kwargs["y2"])):
+        sig_x = F.sigmoid(x/scale_tau)[y.mean(1,keepdim=True)>0]
+
+        def dice(predict, target):
+            assert predict.size() == target.size(), "the size of predict and target must be equal."
+            num = predict.size(0)
+            pre = predict.view(num, -1)
+            tar = target.view(num, -1)
+            intersection = (pre * tar).sum(-1).sum()  #利用预测值与标签相乘当作交集
+            union = (pre + tar).sum(-1).sum()
+            score = 2 * (intersection + 1e-8) / (union + 1e-8)
+            return score
+
+        return torch.log(sig_x+1e-5).mean() + dice((x/scale_tau).sigmoid(),(y.mean(1,keepdim=True)>0).float())
 
     # TODO: IV define classifier
 
@@ -358,13 +374,13 @@ for j in range(0, 1000, args.batch_size):
         classifier_fn=classifier,
         classifier_kwargs=classifier_kwargs,
     )
-    dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver++",
-                            correcting_x0_fn="dynamic_thresholding")
+    dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver++",)
+                            # correcting_x0_fn="dynamic_thresholding")
     with torch.no_grad():
         x_image = dpm_solver.sample(
             torch.randn_like(x_T).cuda(),
             steps=30,
-            order=3,
+            order=2,
             skip_type="time_uniform",
             method="multistep",
         )
@@ -397,4 +413,6 @@ for j in range(0, 1000, args.batch_size):
         sub_label = sub_label.cpu().permute(1, 2, 0).numpy()
         numpy_to_pil(sub_image)[0].save(f"./isic_stage3/image_{j+i}.png")
         numpy_to_pil(sub_label)[0].save(f"./isic_stage3/mask_{j+i}.png")
+
+
 
