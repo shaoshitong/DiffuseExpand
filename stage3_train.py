@@ -22,14 +22,14 @@ parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
 parser.add_argument('--dataset', type=str, default='ISIC', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-3, help='learning rate')
-parser.add_argument('--batch_size', type=int, default=4, help='batch size for training networks')
+parser.add_argument('--batch_size', type=int, default=8, help='batch size for training networks')
 parser.add_argument('--data_path', type=str,
-                    default='./covid-chestxray-dataset/images/',
+                    default='/home/Bigdata/medical_dataset/ISIC2017/',
                     help='dataset path')
 parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
 parser.add_argument('--csv_path', type=str,
                     default="./covid-chestxray-dataset/metadata.csv")
-parser.add_argument('--save_path', type=str, default="./stage2")
+parser.add_argument('--save_path', type=str, default="./checkpoint/")
 parser.add_argument('--unet_ckpt_path', type=str,
                     default="/home/sst/product/diffusion-model-learning/demo/256x256_diffusion.pt")
 parser.add_argument('--class_cond', type=bool, default=True)
@@ -69,7 +69,7 @@ def yield_data(dataloader):
 
 def create_argparser():
     defaults = dict(
-        iterations=5000,
+        iterations=10000,
         image_size=256,
         num_channels=256,
         num_res_blocks=2,
@@ -176,7 +176,6 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
 
     set_random_seed(rank + np.random.randint(0, 1000))
     torch.cuda.set_device(gpu)
-
     # TODO: build dataset
     print("build dataset....")
     if args.dataset == "COVID19":
@@ -248,6 +247,8 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
     mp_trainer = MixedPrecisionTrainer(
         model=model, use_fp16=args.classifier_use_fp16, initial_lg_loss_scale=16.0
     )
+    model.load_state_dict(torch.load("/home/sst/下载/stage3_isic_model_5000.pt",map_location="cpu").state_dict(),strict=False)
+
     model = DDP(
         model.cuda(gpu),
         device_ids=[gpu],
@@ -270,7 +271,8 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
                 yield tuple(x[i: i + microbatch] if x is not None else None for x in args)
 
     def forward_backward_log(data_loader, prefix="train"):
-        batch, cond2 = data_loader
+        batch, cond1, cond2 = data_loader
+        cond1 = cond1.cuda(gpu).long()
         labels = cond2.cuda(gpu).float()
         batch = batch.cuda(gpu)
         # Noisy images
@@ -280,17 +282,25 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
         else:
             t = torch.zeros(batch.shape[0], dtype=torch.long).cuda(gpu)
 
-        for i, (sub_batch, sub_labels, sub_t) in enumerate(
-                split_microbatches(args.microbatch, batch, labels, t)
+        for i, (sub_batch, sub_cond1, sub_labels, sub_t) in enumerate(
+                split_microbatches(args.microbatch, batch, cond1, labels, t)
         ):
-            logits = model(sub_batch, timesteps=sub_t)
-            diceloss = dice_loss(logits.sigmoid(), sub_labels)
-            mseloss = F.l1_loss(logits.sigmoid(), sub_labels)
-            loss = diceloss + mseloss
+            with torch.cuda.amp.autocast(True):
+                logits, pred_cond1 = model(sub_batch, timesteps=sub_t)
+            logits = logits.float()
+            pred_cond1 = pred_cond1.float()
+            index = torch.where(sub_cond1==0)[0]
+            if index.shape[0]>0:
+                diceloss = dice_loss(logits[index].sigmoid(), sub_labels[index])
+                mseloss = F.l1_loss(logits[index].sigmoid(), sub_labels[index])
+            else:
+                diceloss = 0.
+                mseloss = 0.
+            pred_cond1 = F.cross_entropy(pred_cond1,sub_cond1)
+            loss = diceloss + mseloss + pred_cond1
             losses = {}
             losses[f"{prefix}_dice_loss"] = diceloss.detach().item()
             losses[f"{prefix}_l1_loss"] = mseloss.detach().item()
-            losses[f"{prefix}_psnr_loss"] = psnr_loss(logits.sigmoid(), sub_labels).detach().item()
             loss = loss.mean()
             if loss.requires_grad:
                 if i == 0:
@@ -298,13 +308,13 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
                 mp_trainer.backward(loss * len(sub_batch) / len(batch))
             return losses
     for step in range(int(args.iterations//len(train_loader))):
-        for i,(batch,cond2) in enumerate(train_loader): 
+        for i,(batch,cond1,cond2) in enumerate(train_loader):
             if gpu==0:
                 print(f"step is {step*len(train_loader)+i}")
             if args.anneal_lr:
                 set_annealed_lr(opt, args.lr, (step) / args.iterations)
 
-            forward_backward_log([batch,cond2])
+            forward_backward_log([batch,cond1,cond2])
             mp_trainer.optimize(opt)
             if (
                     step
@@ -313,12 +323,12 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
             ):
                 print("saving model...")
                 save_model(mp_trainer, opt, step,"./stage2/")
-        total_loss = {"val_dice_loss":0,"val_psnr_loss":0,"val_l1_loss":0}
-        for i,(batch,cond2) in enumerate(test_loader):
+        total_loss = {"val_dice_loss":0,"val_l1_loss":0}
+        for i,(batch,cond1,cond2) in enumerate(test_loader):
             with torch.no_grad():
                 with model.no_sync():
                     model.eval()
-                    losses = forward_backward_log([batch,cond2], prefix="val")
+                    losses = forward_backward_log([batch,cond1,cond2], prefix="val")
                     for key in total_loss.keys():
                         total_loss[key] += losses[key]
                     model.train()
@@ -342,7 +352,7 @@ def save_model(mp_trainer, opt, step, save_path):
     if dist.get_rank() == 0:
         global args
         torch.save(
-            mp_trainer.model,
+            mp_trainer.model.state_dict(),
             os.path.join(save_path, f"stage3_isic_model_{step}.pt"),
         )
 

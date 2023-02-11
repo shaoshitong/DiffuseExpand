@@ -299,7 +299,7 @@ class AttentionBlock(nn.Module):
     def _forward(self, x):
         b, c, *spatial = x.shape
         x = x.reshape(b, c, -1)
-        qkv = self.qkv(self.norm(x))
+        qkv = self.qkv(self.norm(x).float()).float()
         h = self.attention(qkv)
         h = self.proj_out(h)
         return (x + h).reshape(b, c, *spatial)
@@ -614,7 +614,8 @@ class UNetModel(nn.Module):
                     ds //= 2
                 self.output_blocks.append(TimestepEmbedSequential(*layers))
                 self._feature_size += ch
-
+        self._ch = ch
+        self._input_ch = input_ch
         self.out = nn.Sequential(
             normalization(ch),
             nn.SiLU(),
@@ -669,8 +670,6 @@ class UNetModel(nn.Module):
         h = h.type(x.dtype)
         h = self.out(h)
         index = th.where(y1== 1)[0]
-        if index.shape[0]>0:
-            h[index] = h[index].mean(1,keepdim=True).expand_as(h[index])
         return h
 
 
@@ -726,6 +725,12 @@ class EncoderUNetModel(UNetModel):
             use_new_attention_order=use_new_attention_order,
         )
 
+        self.out2 =nn.Sequential(
+            normalization(self._ch),
+            nn.AdaptiveAvgPool2d((1,1)),
+            nn.Flatten(),
+            nn.Linear(self._input_ch,2)
+        )
     def convert_to_fp16(self):
         """
         Convert the torso of the model to float16.
@@ -742,14 +747,15 @@ class EncoderUNetModel(UNetModel):
 
     def forward(self, x, timesteps):
         hs = []
+        x = x.float()
+        timesteps = timesteps.float()
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
         h = x.type(self.dtype).float()
         for module in self.input_blocks:
-            h = module(h, emb.half())
+            h = module(h, emb)
             hs.append(h)
         h = self.middle_block(h, emb)
         for module in self.output_blocks:
             h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb)
-        h = h.type(x.dtype)
-        return self.out(h)
+        return self.out(h),self.out2(h)

@@ -36,9 +36,9 @@ class GenerateSkinDataset(data.Dataset):
         image = image / 255.0
         if_label = random.random() > 0.5
         if if_label:
-            return torch.from_numpy(gt).expand(3,-1,-1), 1, torch.from_numpy(gt).expand(3,-1,-1)
+            return torch.from_numpy(gt).expand(3, -1, -1), 1, torch.from_numpy(gt).expand(3, -1, -1)
         else:
-            return torch.from_numpy(image).permute(2,0,1), 0, torch.from_numpy(gt).expand(3,-1,-1)
+            return torch.from_numpy(image).permute(2, 0, 1), 0, torch.from_numpy(gt).expand(3, -1, -1)
 
     def __len__(self):
         return self.size
@@ -78,7 +78,11 @@ class SkinDataset(data.Dataset):
         transformed = self.transform(image=image, mask=gt)
         image = self.img_transform(transformed['image'])
         gt = self.gt_transform(transformed['mask'])
-        return image, (gt>0.5).float()
+        if_label = random.random() > 0.5
+        if if_label:
+            return (gt).expand(3,-1,-1), 1, (gt)
+        else:
+            return (image), 0, (gt)
 
     def __len__(self):
         return self.size
