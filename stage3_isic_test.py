@@ -1,5 +1,7 @@
 import copy
 import torch.nn.functional as F
+import torchvision.transforms
+
 from utils import NoiseScheduleVP, model_wrapper, DPM_Solver
 import argparse
 from torch.utils.data import DataLoader
@@ -28,7 +30,7 @@ parser.add_argument('--cuda_devices', type=str, default="0", help="data parallel
 parser2 = copy.deepcopy(parser)
 scale_tau = 1
 # TODO: V. define guidance_scale
-guidance_scale = 10.  # Nothing to do with uncond scenarios
+guidance_scale = 3.  # Nothing to do with uncond scenarios
 
 
 def str2bool(v):
@@ -312,20 +314,20 @@ betas = torch.from_numpy(get_named_beta_schedule("linear", 1000)).cuda()
 noise_schedule = NoiseScheduleVP(schedule='discrete', betas=betas)
 image_shape = (BATCHSIZE, 3, 256, 256)
 
-for j in range(0, 20, args.batch_size):
+for j in range(0, 100, args.batch_size):
     label2 = None
 
     model_kwargs = {"y1": label1, "y2": label2}
 
 
     def condition_1(x1, x2, y=(model_kwargs["y2"])):
-        sig_x = torch.nn.functional.log_softmax(x2 / scale_tau)[label1]
-        sig_x = sig_x.mean()
-        print("stage 1:",sig_x)
+        sig_x = torch.nn.functional.log_softmax(x2 / scale_tau,1)[range(BATCHSIZE),label1].sum()
+        sig_x = sig_x
+        print("stage 1:",label1,sig_x.item())
         return sig_x
 
 
-    classifier_1 = lambda x, t, cond: cond(*classifier_fn(torch.clamp(x/2+0.5,0,1), t))
+    classifier_1 = lambda x, t, cond: cond(*classifier_fn(x, t))
 
     model_fn = model_wrapper(
         model,
@@ -351,11 +353,10 @@ for j in range(0, 20, args.batch_size):
             method="multistep",
         )
         acc = torch.Tensor([0.2989, 0.5870, 0.1140])[None, :, None, None].cuda()
-        y_label = (y_label).min(1, keepdim=True)[0].expand(-1, 3, -1, -1)
+        y_label = torch.sign((y_label).mean(1, keepdim=True).expand(-1, 3, -1, -1))
+        y_label[y_label<=0] =  torch.Tensor([-1]).cuda()
 
-    model_kwargs = {"y1": label1 * 0, "y2": torch.sign(y_label)}
-    model_kwargs["y2"][model_kwargs["y2"] <= 0] = torch.Tensor([-1]).cuda()
-    model_kwargs["y2"] = model_kwargs["y2"].cuda()
+    model_kwargs = {"y1": label1 * 0, "y2": y_label}
     # TODO: III. define condition
     import torch.nn.functional as F
 
@@ -371,13 +372,14 @@ for j in range(0, 20, args.batch_size):
             score = 2 * (intersection + 1e-8) / (union + 1e-8)
             return score
 
-        sig_x_2 = torch.nn.functional.log_softmax(x2 / scale_tau)[(label1*0).long()]
-        sig_x_2 = sig_x_2.mean()
-        sig_x_1 = F.sigmoid(x1 / scale_tau)[y.mean(1, keepdim=True) > 0]
-        sig_value = torch.log(sig_x_1 + 1e-5).mean()
+        sig_x_2 = torch.nn.functional.log_softmax(x2 / scale_tau,1)[range(BATCHSIZE),(label1*0).long()].sum()
+        mask = y.mean(1, keepdim=True) > 0
+        sig_x_1 = F.sigmoid(x1 / scale_tau)
+        sig_value = torch.log(sig_x_1[mask] + 1e-5).sum() * mask.numel() /mask.float().sum() - torch.log(sig_x_1[~mask] + 1e-5).sum()* mask.numel() / (~mask).float().sum()
+        sig_value = sig_value / mask.shape[2] / mask.shape[3] * mask.shape[0]
         dice_value = dice((x1 / scale_tau).sigmoid(), (y.mean(1, keepdim=True) > 0).float())
-        print("stage 2:",dice_value,sig_x_2)
-        return sig_value * 0 + dice_value + sig_x_2
+        print("stage 2:",sig_value,dice_value,sig_x_2)
+        return sig_value + sig_x_2 #+ dice_value  + sig_x_2
 
 
     # TODO: IV define classifier
@@ -394,12 +396,12 @@ for j in range(0, 20, args.batch_size):
         classifier_fn=classifier_2,
         classifier_kwargs=classifier_kwargs,
     )
-    dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver++", )
+    dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver++")
     # correcting_x0_fn="dynamic_thresholding")
     with torch.no_grad():
         x_image = dpm_solver.sample(
             torch.randn_like(x_T).cuda(),
-            steps=100,
+            steps=30,
             order=3,
             skip_type="time_uniform",
             method="multistep",
@@ -408,28 +410,15 @@ for j in range(0, 20, args.batch_size):
     from PIL import Image
 
 
-    def numpy_to_pil(images):
-        """
-        Convert a numpy image or a batch of images to a PIL image.
-        """
-        if images.ndim == 3:
-            images = images[None, ...]
-        images = (images * 255).round().astype("uint8")
-        if images.shape[-1] == 1:
-            # special case for grayscale (single channel) images
-            pil_images = [Image.fromarray(image.squeeze(), mode="L") for image in images]
-        else:
-            pil_images = [Image.fromarray(image) for image in images]
-        return pil_images
-
-
+    turn = torchvision.transforms.ToPILImage()
     for i in range(x_image.shape[0]):
         sub_image, sub_label = x_image[i], y_label[i]
+        print(sub_image.shape,sub_label.shape)
         sub_image = sub_image * torch.Tensor([0.229, 0.224, 0.225])[:, None, None].cuda() \
                     + torch.Tensor([0.485, 0.456, 0.406])[:, None, None].cuda()
-        sub_image = sub_image.clamp(0, 1)
-        sub_image = sub_image.cpu().permute(1, 2, 0).numpy()
-        sub_label = ((sub_label / 2 + 0.5).mean(0, keepdim=True).clamp(0, 1) > 0.5).float()
-        sub_label = sub_label.cpu().permute(1, 2, 0).numpy()
-        numpy_to_pil(sub_image)[0].save(f"./isic_test/{j + i}_image.png")
-        numpy_to_pil(sub_label)[0].save(f"./isic_test/{j + i}_mask.png")
+        sub_image = sub_image.clamp(0, 1).cpu()
+        sub_image = turn(sub_image)
+        sub_label = ((sub_label / 2 + 0.5).mean(0, keepdim=True).clamp(0, 1) > 0.5).float().cpu()
+        sub_label = turn(sub_label)
+        sub_image.save(f"/home/Bigdata/medical_dataset/ISIC_GEN/stage3_tau_3/image_{j + i}.png")
+        sub_label.save(f"/home/Bigdata/medical_dataset/ISIC_GEN/stage3_tau_3/mask_{j + i}.png")

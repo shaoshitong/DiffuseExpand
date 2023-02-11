@@ -319,7 +319,6 @@ def model_wrapper(
         with torch.enable_grad():
             x_in = x.detach().requires_grad_(True)
             log_prob = classifier_fn(x_in, t_input, condition, **classifier_kwargs)
-            print(log_prob)
             return torch.autograd.grad(log_prob.sum(), x_in)[0]
 
     def model_fn(x, t_continuous):
@@ -335,8 +334,10 @@ def model_wrapper(
             sigma_t = noise_schedule.marginal_std(t_continuous)
             noise = noise_pred_fn(x, t_continuous)
             if cond_grad.ndim == 4:
+                print("norm_scale:",cond_grad.norm()/noise.norm())
                 return noise - guidance_scale * sigma_t.view(sigma_t.shape[0], 1, 1, 1) * cond_grad
             elif cond_grad.ndim == 3:
+                print("norm_scale:",cond_grad.norm()/noise.norm())
                 return noise - guidance_scale * sigma_t.view(sigma_t.shape[0], 1, 1) * cond_grad
             else:
                 raise NotImplementedError

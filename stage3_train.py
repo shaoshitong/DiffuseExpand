@@ -247,7 +247,7 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
     mp_trainer = MixedPrecisionTrainer(
         model=model, use_fp16=args.classifier_use_fp16, initial_lg_loss_scale=16.0
     )
-    model.load_state_dict(torch.load("/home/Bigdata/mtt_distillation_ckpt/stage3_isic_model_10000.pt",map_location="cpu").state_dict(),strict=False)
+    model.load_state_dict(torch.load("/home/Bigdata/mtt_distillation_ckpt/stage3_isic_model_10000.pt",map_location="cpu"),strict=False)
 
     model = DDP(
         model.cuda(gpu),
