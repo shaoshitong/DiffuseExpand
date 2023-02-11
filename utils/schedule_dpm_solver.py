@@ -318,7 +318,6 @@ def model_wrapper(
         """
         with torch.enable_grad():
             x_in = x.detach().requires_grad_(True)
-            print(x_in.device,t_input.device)
             log_prob = classifier_fn(x_in, t_input, condition, **classifier_kwargs)
             print(log_prob)
             return torch.autograd.grad(log_prob.sum(), x_in)[0]

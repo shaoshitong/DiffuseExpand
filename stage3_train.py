@@ -255,7 +255,7 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
         output_device=gpu,
         broadcast_buffers=False,
         bucket_cap_mb=128,
-        find_unused_parameters=False,
+        find_unused_parameters=True,
     )
     opt = AdamW(mp_trainer.master_params, lr=args.lr, weight_decay=args.weight_decay)
 
@@ -294,8 +294,8 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
                 diceloss = dice_loss(logits[index].sigmoid(), sub_labels[index])
                 mseloss = F.l1_loss(logits[index].sigmoid(), sub_labels[index])
             else:
-                diceloss = 0.
-                mseloss = 0.
+                diceloss = torch.Tensor([0.]).cuda()
+                mseloss = torch.Tensor([0.]).cuda()
             pred_cond1 = F.cross_entropy(pred_cond1,sub_cond1)
             loss = diceloss + mseloss + pred_cond1
             losses = {}

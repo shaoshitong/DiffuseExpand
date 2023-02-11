@@ -315,18 +315,28 @@ image_shape = (BATCHSIZE, 3, 256, 256)
 
 for j in range(0, 20, args.batch_size):
     label2 = None
+
     model_kwargs = {"y1": label1, "y2": label2}
+
+
+    def condition_1(x1, x2, y=(model_kwargs["y2"])):
+        sig_x = F.log_softmax(x2 / scale_tau)[label1]
+        sig_x = sig_x.mean()
+        return sig_x
+
+
     model_fn = model_wrapper(
         model,
         noise_schedule,
         model_type="noise",  # or "x_start" or "v" or "score"
         model_kwargs=model_kwargs,
-        guidance_type="uncond",
-        condition=None,
+        guidance_type="classifier",
+        condition=condition_1,
         guidance_scale=1,
-        classifier_fn=None,
-        classifier_kwargs={},
+        classifier_fn=classifier_fn,
+        classifier_kwargs=classifier_kwargs,
     )
+
     dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver++",
                             correcting_x0_fn="dynamic_thresholding")
     x_T = torch.randn(image_shape).cuda()
@@ -339,7 +349,6 @@ for j in range(0, 20, args.batch_size):
             method="multistep",
         )
         acc = torch.Tensor([0.2989, 0.5870, 0.1140])[None, :, None, None].cuda()
-        print(y_label)
         y_label = (y_label).min(1, keepdim=True)[0].expand(-1, 3, -1, -1)
 
     model_kwargs = {"y1": label1 * 0, "y2": torch.sign(y_label)}
@@ -349,8 +358,7 @@ for j in range(0, 20, args.batch_size):
     import torch.nn.functional as F
 
 
-    def condition(x, y=(model_kwargs["y2"])):
-        sig_x = F.sigmoid(x / scale_tau)[y.mean(1, keepdim=True) > 0]
+    def condition_2(x1,x2, y=(model_kwargs["y2"])):
 
         def dice(predict, target):
             assert predict.size() == target.size(), "the size of predict and target must be equal."
@@ -362,9 +370,12 @@ for j in range(0, 20, args.batch_size):
             score = 2 * (intersection + 1e-8) / (union + 1e-8)
             return score
 
-        sig_value = torch.log(sig_x + 1e-5).mean()
-        dice_value = dice((x / scale_tau).sigmoid(), (y.mean(1, keepdim=True) > 0).float())
-        return sig_value + dice_value
+        sig_x_2 = F.log_softmax(x2 / scale_tau)[label1]
+        sig_x_2 = sig_x_2.mean()
+        sig_x_1 = F.sigmoid(x1 / scale_tau)[y.mean(1, keepdim=True) > 0]
+        sig_value = torch.log(sig_x_1 + 1e-5).mean()
+        dice_value = dice((x1 / scale_tau).sigmoid(), (y.mean(1, keepdim=True) > 0).float())
+        return sig_value * 0 + dice_value + sig_x_2
 
 
     # TODO: IV define classifier
@@ -375,7 +386,7 @@ for j in range(0, 20, args.batch_size):
         model_type="noise",  # or "x_start" or "v" or "score"
         model_kwargs=model_kwargs,
         guidance_type="classifier",
-        condition=condition,
+        condition=condition_2,
         guidance_scale=guidance_scale,
         classifier_fn=classifier,
         classifier_kwargs=classifier_kwargs,
