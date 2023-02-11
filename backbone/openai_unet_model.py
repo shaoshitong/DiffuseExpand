@@ -669,7 +669,6 @@ class UNetModel(nn.Module):
             h = module(h, emb)
         h = h.type(x.dtype)
         h = self.out(h)
-        index = th.where(y1== 1)[0]
         return h
 
 

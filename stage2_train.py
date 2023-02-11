@@ -20,11 +20,11 @@ parser.add_argument('--dataset', type=str, default='ISIC', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
 parser.add_argument('--batch_size', type=int, default=2, help='batch size for training networks')
-parser.add_argument('--data_path', type=str, default='./isic_dataset/', help='dataset path')
+parser.add_argument('--data_path', type=str, default='/home/Bigdata/medical_dataset/ISIC2017', help='dataset path')
 parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
 parser.add_argument('--csv_path', type=str, default="./covid-chestxray-dataset/metadata.csv")
 parser.add_argument('--save_path', type=str, default="/home/Bigdata/mtt_distillation_ckpt/stage2")
-parser.add_argument('--unet_ckpt_path', type=str, default="./stage2/model_isic_stage2_30000.pt")
+parser.add_argument('--unet_ckpt_path', type=str, default="/home/sst/product/diffusion-model-learning/demo/256x256_diffusion.pt")
 parser.add_argument('--class_cond', type=bool, default=True)
 parser.add_argument('--num_classes_1', type=int, default=2)
 parser.add_argument('--num_classes_2', type=int, default=-1)
@@ -184,13 +184,17 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
         image_root = '{}/data_train.npy'.format(args.data_path)
         gt_root = '{}/mask_train.npy'.format(args.data_path)
         train_set = GenerateSkinDataset(image_root=image_root, gt_root=gt_root)
-        # from torchvision import transforms
+        from torchvision import transforms
         # for i,(image,cond1,cond2) in enumerate(train_set):
+        #     image = image * torch.Tensor([0.229, 0.224, 0.225])[:,None,None] \
+        #     + torch.Tensor([0.485, 0.456, 0.406])[:,None,None]
         #     turn = transforms.ToPILImage()
         #     image = turn(image)
-        #     image.save(f"AA_{i}.png")
+        #     image.save(f"{i}_image.png")
+        #     cond2 = cond2 / 2 + 0.5
         #     cond2 = turn(cond2)
-        #     cond2.save(f"BB_{i}.png")
+        #     cond2.save(f"{i}_label.png")
+        #     print(i)
         # exit(-1)
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
         train_loader = DataLoader(

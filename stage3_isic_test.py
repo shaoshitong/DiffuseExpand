@@ -1,5 +1,5 @@
 import copy
-
+import torch.nn.functional as F
 from utils import NoiseScheduleVP, model_wrapper, DPM_Solver
 import argparse
 from torch.utils.data import DataLoader
@@ -28,7 +28,7 @@ parser.add_argument('--cuda_devices', type=str, default="0", help="data parallel
 parser2 = copy.deepcopy(parser)
 scale_tau = 1
 # TODO: V. define guidance_scale
-guidance_scale = 20.  # Nothing to do with uncond scenarios
+guidance_scale = 10.  # Nothing to do with uncond scenarios
 
 
 def str2bool(v):
@@ -174,7 +174,7 @@ _model_fn, diffusion = create_model_and_diffusion(
 )
 import os, sys
 
-model_path = "./stage2/model_isic_stage2_30000.pt"
+model_path = "/home/Bigdata/mtt_distillation_ckpt/model_isic_stage2_30000.pt"
 if not os.path.exists(model_path):
     raise KeyError
 
@@ -294,13 +294,12 @@ classifier_fn, _ = create_classifier_and_diffusion(
     **args_to_dict(args_2, NAME)
 )
 
-model_path_2 = "./stage2/stage3_isic_model_5000.pt"
+model_path_2 = "/home/Bigdata/mtt_distillation_ckpt/stage3_isic_model_10000.pt"
 if not os.path.exists(model_path_2):
     raise KeyError
-model_params = torch.load(model_path_2, map_location="cpu").state_dict()
+model_params = torch.load(model_path_2, map_location="cpu")
 classifier_fn.load_state_dict(model_params)
 classifier_fn = classifier_fn.cuda()
-classifier = lambda x, t, cond: cond(classifier_fn(x, t))
 
 # TODO: VII. define classifier_kwargs
 classifier_kwargs = {}  # Nothing to do with uncond scenarios
@@ -320,10 +319,13 @@ for j in range(0, 20, args.batch_size):
 
 
     def condition_1(x1, x2, y=(model_kwargs["y2"])):
-        sig_x = F.log_softmax(x2 / scale_tau)[label1]
+        sig_x = torch.nn.functional.log_softmax(x2 / scale_tau)[label1]
         sig_x = sig_x.mean()
+        print("stage 1:",sig_x)
         return sig_x
 
+
+    classifier_1 = lambda x, t, cond: cond(*classifier_fn(torch.clamp(x/2+0.5,0,1), t))
 
     model_fn = model_wrapper(
         model,
@@ -332,8 +334,8 @@ for j in range(0, 20, args.batch_size):
         model_kwargs=model_kwargs,
         guidance_type="classifier",
         condition=condition_1,
-        guidance_scale=1,
-        classifier_fn=classifier_fn,
+        guidance_scale=guidance_scale,
+        classifier_fn=classifier_1,
         classifier_kwargs=classifier_kwargs,
     )
 
@@ -359,7 +361,6 @@ for j in range(0, 20, args.batch_size):
 
 
     def condition_2(x1,x2, y=(model_kwargs["y2"])):
-
         def dice(predict, target):
             assert predict.size() == target.size(), "the size of predict and target must be equal."
             num = predict.size(0)
@@ -370,15 +371,17 @@ for j in range(0, 20, args.batch_size):
             score = 2 * (intersection + 1e-8) / (union + 1e-8)
             return score
 
-        sig_x_2 = F.log_softmax(x2 / scale_tau)[label1]
+        sig_x_2 = torch.nn.functional.log_softmax(x2 / scale_tau)[(label1*0).long()]
         sig_x_2 = sig_x_2.mean()
         sig_x_1 = F.sigmoid(x1 / scale_tau)[y.mean(1, keepdim=True) > 0]
         sig_value = torch.log(sig_x_1 + 1e-5).mean()
         dice_value = dice((x1 / scale_tau).sigmoid(), (y.mean(1, keepdim=True) > 0).float())
+        print("stage 2:",dice_value,sig_x_2)
         return sig_value * 0 + dice_value + sig_x_2
 
 
     # TODO: IV define classifier
+    classifier_2 = lambda x, t, cond: cond(*classifier_fn(x, t))
 
     model_fn = model_wrapper(
         model,
@@ -388,7 +391,7 @@ for j in range(0, 20, args.batch_size):
         guidance_type="classifier",
         condition=condition_2,
         guidance_scale=guidance_scale,
-        classifier_fn=classifier,
+        classifier_fn=classifier_2,
         classifier_kwargs=classifier_kwargs,
     )
     dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver++", )
@@ -428,5 +431,5 @@ for j in range(0, 20, args.batch_size):
         sub_image = sub_image.cpu().permute(1, 2, 0).numpy()
         sub_label = ((sub_label / 2 + 0.5).mean(0, keepdim=True).clamp(0, 1) > 0.5).float()
         sub_label = sub_label.cpu().permute(1, 2, 0).numpy()
-        numpy_to_pil(sub_image)[0].save(f"./isic_stage3/image_{j + i}.png")
-        numpy_to_pil(sub_label)[0].save(f"./isic_stage3/mask_{j + i}.png")
+        numpy_to_pil(sub_image)[0].save(f"./isic_test/{j + i}_image.png")
+        numpy_to_pil(sub_label)[0].save(f"./isic_test/{j + i}_mask.png")

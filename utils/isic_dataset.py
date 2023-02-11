@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 import albumentations as A
 import cv2
 
-
 class GenerateSkinDataset(data.Dataset):
     """
     dataloader for skin lesion segmentation tasks
@@ -29,16 +28,28 @@ class GenerateSkinDataset(data.Dataset):
         self.gt_transform = transforms.Compose([
             transforms.ToTensor()])
 
+        self.transform = A.Compose(
+            [
+                # A.ShiftScaleRotate(shift_limit=0.15, scale_limit=0.15, rotate_limit=25, p=0.5, border_mode=0),
+                # A.ColorJitter(),
+                A.HorizontalFlip(),
+                A.VerticalFlip()
+            ]
+        )
+
     def __getitem__(self, index):
         image = self.images[index]
         gt = self.gts[index]
         gt = gt / 255.0
-        image = image / 255.0
+        transformed = self.transform(image=image, mask=gt)
+        image = self.img_transform(transformed['image'])
+        gt = self.gt_transform(transformed['mask'])
+        gt = gt.expand(3, -1, -1) * 2 - 1
         if_label = random.random() > 0.5
         if if_label:
-            return torch.from_numpy(gt).expand(3, -1, -1), 1, torch.from_numpy(gt).expand(3, -1, -1)
+            return gt, 1, gt
         else:
-            return torch.from_numpy(image).permute(2, 0, 1), 0, torch.from_numpy(gt).expand(3, -1, -1)
+            return image, 0, gt
 
     def __len__(self):
         return self.size
@@ -64,8 +75,8 @@ class SkinDataset(data.Dataset):
 
         self.transform = A.Compose(
             [
-                A.ShiftScaleRotate(shift_limit=0.15, scale_limit=0.15, rotate_limit=25, p=0.5, border_mode=0),
-                A.ColorJitter(),
+                # A.ShiftScaleRotate(shift_limit=0.15, scale_limit=0.15, rotate_limit=25, p=0.5, border_mode=0),
+                # A.ColorJitter(),
                 A.HorizontalFlip(),
                 A.VerticalFlip()
             ]
@@ -80,7 +91,7 @@ class SkinDataset(data.Dataset):
         gt = self.gt_transform(transformed['mask'])
         if_label = random.random() > 0.5
         if if_label:
-            return (gt).expand(3,-1,-1), 1, (gt)
+            return (gt).expand(3,-1,-1) * 2 - 1, 1, (gt)
         else:
             return (image), 0, (gt)
 
