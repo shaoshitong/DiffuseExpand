@@ -9,6 +9,7 @@ from .gaussian_diffusion import get_named_beta_schedule
 from .train_utils import TrainLoop
 from .schedule_dpm_solver import DPM_Solver, NoiseScheduleVP, model_wrapper
 from .losses import PSNRLoss,DiceLoss
+from .vis_utils import vis_trun
 
 __all__ = [
     "COVID19Dataset",
@@ -28,5 +29,6 @@ __all__ = [
     "get_named_beta_schedule",
     "DPM_Solver",
     "NoiseScheduleVP",
-    "model_wrapper"
+    "model_wrapper",
+    "vis_trun"
 ]

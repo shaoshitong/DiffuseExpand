@@ -5,7 +5,7 @@ import torchvision.transforms
 from utils import NoiseScheduleVP, model_wrapper, DPM_Solver
 import argparse
 from torch.utils.data import DataLoader
-from utils import create_model_and_diffusion
+from utils import create_model_and_diffusion,vis_trun
 import torch, io
 import blobfile as bf
 
@@ -28,9 +28,9 @@ parser.add_argument('--num_classes_1', type=int, default=2)
 parser.add_argument('--num_classes_2', type=int, default=-1)
 parser.add_argument('--cuda_devices', type=str, default="0", help="data parallel training")
 parser2 = copy.deepcopy(parser)
-scale_tau = 1
+scale_tau = 1/5.
 # TODO: V. define guidance_scale
-guidance_scale = 3.  # Nothing to do with uncond scenarios
+guidance_scale = 1  # Nothing to do with uncond scenarios
 
 
 def str2bool(v):
@@ -321,9 +321,9 @@ for j in range(0, 100, args.batch_size):
 
 
     def condition_1(x1, x2, y=(model_kwargs["y2"])):
-        sig_x = torch.nn.functional.log_softmax(x2 / scale_tau,1)[range(BATCHSIZE),label1].sum()
+        sig_x = torch.nn.functional.log_softmax(x2 / scale_tau, 1)[range(BATCHSIZE), label1].sum()
         sig_x = sig_x
-        print("stage 1:",label1,sig_x.item())
+        print("stage 1:", label1, sig_x.item())
         return sig_x
 
 
@@ -354,32 +354,38 @@ for j in range(0, 100, args.batch_size):
         )
         acc = torch.Tensor([0.2989, 0.5870, 0.1140])[None, :, None, None].cuda()
         y_label = torch.sign((y_label).mean(1, keepdim=True).expand(-1, 3, -1, -1))
-        y_label[y_label<=0] =  torch.Tensor([-1]).cuda()
+        y_label[y_label <= 0] = torch.Tensor([-1]).cuda()
 
-    model_kwargs = {"y1": label1 * 0, "y2": y_label}
+    model_kwargs = {"y1": label1 * 0, "y2": y_label.clone()}
     # TODO: III. define condition
     import torch.nn.functional as F
 
 
-    def condition_2(x1,x2, y=(model_kwargs["y2"])):
-        def dice(predict, target):
-            assert predict.size() == target.size(), "the size of predict and target must be equal."
-            num = predict.size(0)
-            pre = predict.view(num, -1)
-            tar = target.view(num, -1)
-            intersection = (pre * tar).sum(-1).sum()  # 利用预测值与标签相乘当作交集
-            union = (pre + tar).sum(-1).sum()
-            score = 2 * (intersection + 1e-8) / (union + 1e-8)
-            return score
+    def condition_2(x1, x2, y=(model_kwargs["y2"])):
+        def dice(pred, mask):
+            print(mask.max(),mask.min())
+            weit = 1 + mask * 10 # torch.abs(F.avg_pool2d(mask, kernel_size=31, stride=1, padding=15) - mask)
+            wbce = F.binary_cross_entropy_with_logits(pred, mask, reduction='none')
+            wbce = (weit * wbce).sum(dim=(2, 3)) / weit.sum(dim=(2, 3))
 
-        sig_x_2 = torch.nn.functional.log_softmax(x2 / scale_tau,1)[range(BATCHSIZE),(label1*0).long()].sum()
-        mask = y.mean(1, keepdim=True) > 0
-        sig_x_1 = F.sigmoid(x1 / scale_tau)
-        sig_value = torch.log(sig_x_1[mask] + 1e-5).sum() * mask.numel() /mask.float().sum() - torch.log(sig_x_1[~mask] + 1e-5).sum()* mask.numel() / (~mask).float().sum()
-        sig_value = sig_value / mask.shape[2] / mask.shape[3] * mask.shape[0]
-        dice_value = dice((x1 / scale_tau).sigmoid(), (y.mean(1, keepdim=True) > 0).float())
-        print("stage 2:",sig_value,dice_value,sig_x_2)
-        return sig_value + sig_x_2 #+ dice_value  + sig_x_2
+            pred = torch.sigmoid(pred)
+            inter = ((pred * mask) * weit).sum(dim=(2, 3))
+            union = ((pred + mask) * weit).sum(dim=(2, 3))
+            wiou = (inter + 1) / (union - inter + 1)
+            return wiou.sum(), - wbce.sum()
+
+        #
+        # sig_x_2 = torch.nn.functional.log_softmax(x2 / scale_tau, 1)[range(BATCHSIZE), (label1 * 0).long()].sum()
+        # mask = y.mean(1, keepdim=True) > 0
+        # sig_x_1 = F.sigmoid(x1 / scale_tau)
+        # sig_value = 0.
+        # for i in range(sig_x_1.shape[0]):
+        #     sub_sig_value = torch.log(sig_x_1[i][mask[i]] + 1e-5).mean() - torch.log(sig_x_1[i][~mask[i]] + 1e-5).mean()
+        #     sig_value += sub_sig_value
+
+        dice_value1, dice_value2 = dice((x1 / scale_tau), (y.mean(1, keepdim=True) > 0).float())
+        print("stage 2:", dice_value1, dice_value2)
+        return dice_value1 + dice_value2  # + dice_value  + sig_x_2
 
 
     # TODO: IV define classifier
@@ -396,29 +402,32 @@ for j in range(0, 100, args.batch_size):
         classifier_fn=classifier_2,
         classifier_kwargs=classifier_kwargs,
     )
-    dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver++")
+    dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver")
     # correcting_x0_fn="dynamic_thresholding")
     with torch.no_grad():
         x_image = dpm_solver.sample(
             torch.randn_like(x_T).cuda(),
             steps=30,
             order=3,
-            skip_type="time_uniform",
+            skip_type="logSNR",
             method="multistep",
         )
 
-    from PIL import Image
 
+    from PIL import Image
 
     turn = torchvision.transforms.ToPILImage()
     for i in range(x_image.shape[0]):
         sub_image, sub_label = x_image[i], y_label[i]
-        print(sub_image.shape,sub_label.shape)
+        print(sub_image.shape, sub_label.shape)
         sub_image = sub_image * torch.Tensor([0.229, 0.224, 0.225])[:, None, None].cuda() \
                     + torch.Tensor([0.485, 0.456, 0.406])[:, None, None].cuda()
         sub_image = sub_image.clamp(0, 1).cpu()
-        sub_image = turn(sub_image)
         sub_label = ((sub_label / 2 + 0.5).mean(0, keepdim=True).clamp(0, 1) > 0.5).float().cpu()
+        sem_image = vis_trun(sub_image.numpy(),sub_label.numpy()).transpose((1,2,0))
+        sem_image = Image.fromarray(sem_image)
+        sub_image = turn(sub_image)
         sub_label = turn(sub_label)
-        sub_image.save(f"/home/Bigdata/medical_dataset/ISIC_GEN/stage3_tau_3/image_{j + i}.png")
-        sub_label.save(f"/home/Bigdata/medical_dataset/ISIC_GEN/stage3_tau_3/mask_{j + i}.png")
+        sem_image.save(f"./isic_test/sem_{j + i}.png")
+        # sub_image.save(f"/home/Bigdata/medical_dataset/ISIC_GEN/stage3_tau_5_dice/image_{j + i}.png")
+        # sub_label.save(f"/home/Bigdata/medical_dataset/ISIC_GEN/stage3_tau_5_dice/mask_{j + i}.png")

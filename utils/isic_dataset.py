@@ -42,8 +42,8 @@ class GenerateSkinDataset(data.Dataset):
         gt = self.gts[index]
         gt = gt / 255.0
         transformed = self.transform(image=image, mask=gt)
-        image = self.img_transform(transformed['image'])
-        gt = self.gt_transform(transformed['mask'])
+        image = self.img_transform(transformed['image']).float()
+        gt = self.gt_transform(transformed['mask']).float()
         gt = gt.expand(3, -1, -1) * 2 - 1
         if_label = random.random() > 0.5
         if if_label:
@@ -87,8 +87,8 @@ class SkinDataset(data.Dataset):
         gt = self.gts[index]
         gt = gt / 255.0
         transformed = self.transform(image=image, mask=gt)
-        image = self.img_transform(transformed['image'])
-        gt = self.gt_transform(transformed['mask'])
+        image = self.img_transform(transformed['image']).float()
+        gt = self.gt_transform(transformed['mask']).float()
         if_label = random.random() > 0.5
         if if_label:
             return (gt).expand(3,-1,-1) * 2 - 1, 1, (gt)

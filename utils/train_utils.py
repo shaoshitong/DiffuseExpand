@@ -193,7 +193,6 @@ class TrainLoop:
                 )
 
             loss = (losses["loss"] * weights).mean()
-
             print({k: v * weights for k, v in losses.items()})
             self.mp_trainer.backward(loss)
 

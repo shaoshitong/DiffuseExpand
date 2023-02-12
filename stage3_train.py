@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
 parser.add_argument('--dataset', type=str, default='ISIC', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-3, help='learning rate')
-parser.add_argument('--batch_size', type=int, default=8, help='batch size for training networks')
+parser.add_argument('--batch_size', type=int, default=7, help='batch size for training networks')
 parser.add_argument('--data_path', type=str,
                     default='/home/Bigdata/medical_dataset/ISIC2017/',
                     help='dataset path')
@@ -291,8 +291,10 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
             pred_cond1 = pred_cond1.float()
             index = torch.where(sub_cond1==0)[0]
             if index.shape[0]>0:
-                diceloss = dice_loss(logits[index].sigmoid(), sub_labels[index])
-                mseloss = F.l1_loss(logits[index].sigmoid(), sub_labels[index])
+                sig_logits = logits[index]
+                sig_sub_labels = sub_labels[index]
+                diceloss = dice_loss(sig_logits,sig_sub_labels)
+                mseloss = F.l1_loss(sig_logits.sigmoid(),sig_sub_labels)
             else:
                 diceloss = torch.Tensor([0.]).cuda()
                 mseloss = torch.Tensor([0.]).cuda()

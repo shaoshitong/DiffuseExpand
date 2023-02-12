@@ -769,9 +769,7 @@ class GaussianDiffusion:
             model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start)
-            index = th.where(model_kwargs["y1"]==1)[0]
-            if index.shape[0]>0:
-                noise[index] = noise[index,0,:,:].clone().expand_as(noise[index])
+
         x_t = self.q_sample(x_start, t, noise=noise)
         terms = {}
 
