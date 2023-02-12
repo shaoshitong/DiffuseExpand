@@ -19,12 +19,12 @@ from utils import set_device, setup_dist, create_model_and_diffusion, create_nam
 from backbone.fp16_util import MixedPrecisionTrainer
 
 parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
-parser.add_argument('--dataset', type=str, default='ISIC', help='dataset')
+parser.add_argument('--dataset', type=str, default='CGMH', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--batch_size', type=int, default=7, help='batch size for training networks')
 parser.add_argument('--data_path', type=str,
-                    default='/home/Bigdata/medical_dataset/ISIC2017/',
+                    default='/home/Bigdata/medical_dataset/CGMH_PelvisSegment/',
                     help='dataset path')
 parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
 parser.add_argument('--csv_path', type=str,
@@ -98,6 +98,7 @@ def create_argparser():
         lr=3e-4,
         fp16_scale_growth=1e-3,
         lr_anneal_steps=30000,
+        isic = False,
     )
 
     diffusion_defaults = dict(
@@ -188,6 +189,9 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
         image_root = '{}/data_train.npy'.format(args.data_path)
         gt_root = '{}/mask_train.npy'.format(args.data_path)
         dst = SkinDataset(image_root=image_root, gt_root=gt_root)
+    elif args.dataset == "CGMH":
+        from utils.cgmh_dataset import CGMHDataset
+        dst = CGMHDataset(root_path=args.data_path)
     else:
         raise NotImplementedError
     from sklearn.model_selection import StratifiedShuffleSplit
@@ -247,7 +251,7 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
     mp_trainer = MixedPrecisionTrainer(
         model=model, use_fp16=args.classifier_use_fp16, initial_lg_loss_scale=16.0
     )
-    model.load_state_dict(torch.load("/home/Bigdata/mtt_distillation_ckpt/stage3_isic_model_10000.pt",map_location="cpu"),strict=False)
+    model.load_state_dict(torch.load("/home/Bigdata/mtt_distillation_ckpt/COVID19/stage3/stage3_model_5000.pt",map_location="cpu"),strict=False)
 
     model = DDP(
         model.cuda(gpu),
@@ -324,7 +328,7 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
                     and not (step) % args.save_interval
             ):
                 print("saving model...")
-                save_model(mp_trainer, opt, step,"./stage2/")
+                save_model(mp_trainer, opt, step,"./checkpoint/")
         total_loss = {"val_dice_loss":0,"val_l1_loss":0}
         for i,(batch,cond1,cond2) in enumerate(test_loader):
             with torch.no_grad():
@@ -355,7 +359,7 @@ def save_model(mp_trainer, opt, step, save_path):
         global args
         torch.save(
             mp_trainer.model.state_dict(),
-            os.path.join(save_path, f"stage3_isic_model_{step}.pt"),
+            os.path.join(save_path, f"stage3_cgmh_model_{step}.pt"),
         )
 
 

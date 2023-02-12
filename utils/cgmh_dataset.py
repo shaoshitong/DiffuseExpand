@@ -45,9 +45,10 @@ class CGMHDataset(Dataset):
         self.path_set = []
         for path in os.listdir(self.image_path):
             if path.endswith(".png"):
-                self.path_set.append(path)
+                self.path_set.append(os.path.join(self.image_path,path))
         if transform == None:
             self.transform = transforms.Compose([transforms.ToTensor(), transforms.Resize((256, 256))])
+
         from utils.stnaugment import STNAugment
         self.data_aug = STNAugment()
 
@@ -77,7 +78,12 @@ class CGMHDataset(Dataset):
         image = self.transform(image).float()
         label = (self.transform(label) > 0.5).float()
         image,label = self.apply_transforms(image,label,transforms)
-        return image, label
+        if_label = random.random() > 0.5
+        if if_label:
+            return (label) * 2 - 1, 1, label
+        else:
+            return (image) * 2 - 1, 0, label
+
 
 def split_train_and_val(dataset,split_ratio = 0.9):
     from sklearn.model_selection import StratifiedShuffleSplit

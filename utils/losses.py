@@ -181,7 +181,7 @@ class DiceLoss(nn.Module):
 
     def forward(self,pred, mask):
         print(pred.shape,mask.shape)
-        weit = 1 + 5 * torch.abs(F.avg_pool2d(mask, kernel_size=31, stride=1, padding=15) - mask)
+        weit = 1  + torch.abs(F.avg_pool2d(mask, kernel_size=31, stride=1, padding=15) - mask) / 100
         wbce = F.binary_cross_entropy_with_logits(pred, mask, reduction='none')
         wbce = (weit * wbce).sum(dim=(2, 3)) / weit.sum(dim=(2, 3))
 
