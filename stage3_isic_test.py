@@ -431,3 +431,5 @@ for j in range(0, 100, args.batch_size):
         sem_image.save(f"./isic_test/sem_{j + i}.png")
         # sub_image.save(f"/home/Bigdata/medical_dataset/ISIC_GEN/stage3_tau_5_dice/image_{j + i}.png")
         # sub_label.save(f"/home/Bigdata/medical_dataset/ISIC_GEN/stage3_tau_5_dice/mask_{j + i}.png")
+
+

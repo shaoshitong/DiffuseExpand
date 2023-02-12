@@ -10,6 +10,7 @@ from .train_utils import TrainLoop
 from .schedule_dpm_solver import DPM_Solver, NoiseScheduleVP, model_wrapper
 from .losses import PSNRLoss,DiceLoss
 from .vis_utils import vis_trun
+from .cgmh_dataset import GenerateCGMHDataset,CGMHDataset,split_train_and_val
 
 __all__ = [
     "COVID19Dataset",
@@ -30,5 +31,8 @@ __all__ = [
     "DPM_Solver",
     "NoiseScheduleVP",
     "model_wrapper",
-    "vis_trun"
+    "vis_trun",
+    "GenerateCGMHDataset",
+    "CGMHDataset",
+    "split_train_and_val"
 ]

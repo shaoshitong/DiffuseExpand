@@ -16,11 +16,11 @@ import numpy as np
 from utils import set_device, setup_dist, create_model_and_diffusion, create_named_schedule_sampler,TrainLoop
 
 parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
-parser.add_argument('--dataset', type=str, default='ISIC', help='dataset')
+parser.add_argument('--dataset', type=str, default='CGMH', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
-parser.add_argument('--batch_size', type=int, default=2, help='batch size for training networks')
-parser.add_argument('--data_path', type=str, default='/home/Bigdata/medical_dataset/ISIC2017', help='dataset path')
+parser.add_argument('--batch_size', type=int, default=1, help='batch size for training networks')
+parser.add_argument('--data_path', type=str, default='/home/Bigdata/medical_dataset/CGMH_PelvisSegment', help='dataset path')
 parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
 parser.add_argument('--csv_path', type=str, default="./covid-chestxray-dataset/metadata.csv")
 parser.add_argument('--save_path', type=str, default="/home/Bigdata/mtt_distillation_ckpt/stage2")
@@ -196,6 +196,18 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
         #     cond2.save(f"{i}_label.png")
         #     print(i)
         # exit(-1)
+        train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
+        train_loader = DataLoader(
+            train_set,
+            batch_size=args.batch_size,
+            sampler=train_sampler,
+            num_workers=2,
+            pin_memory=(torch.cuda.is_available()),
+        )
+    elif args.dataset == "CGMH":
+        from utils.cgmh_dataset import GenerateCGMHDataset,split_train_and_val
+        dataset = GenerateCGMHDataset(root_path=args.data_path)
+        train_set,_ = split_train_and_val(dataset)
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
         train_loader = DataLoader(
             train_set,

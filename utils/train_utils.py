@@ -162,8 +162,9 @@ class TrainLoop:
 
     def forward_backward(self, batch, cond1, cond2):
         self.mp_trainer.zero_grad(self.opt)
+        print(batch.shape,cond2.shape,cond1.shape,batch.max(),batch.min(),cond2.max(),cond2.min(),cond1.max(),cond1.min())
         for i in range(0, batch.shape[0], self.microbatch):
-            if isinstance(self.train_data.dataset,GenerateCOVID19Dataset):
+            if  batch.shape[1] == 1:
                 micro = batch[i: i + self.microbatch].cuda(self.gpu) * 2 - 1
             else:
                 micro = batch[i: i + self.microbatch].cuda(self.gpu)
@@ -215,7 +216,7 @@ class TrainLoop:
             if self.gpu == 0:
                 state_dict = params
                 print(f"saving model {rate}...")
-                filename = f"model_stage2_{self.resume_step + self.step}.pt"
+                filename = f"model_stage2_cgmh_{self.resume_step + self.step}.pt"
                 th.save(state_dict, os.path.join(self.save_path, filename))
 
         save_checkpoint(0, self.mp_trainer.model.state_dict())
