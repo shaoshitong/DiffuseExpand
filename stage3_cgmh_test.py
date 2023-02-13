@@ -7,11 +7,11 @@ from utils import create_model_and_diffusion
 import torch
 
 parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
-parser.add_argument('--dataset', type=str, default='COVID19', help='dataset')
+parser.add_argument('--dataset', type=str, default='CGMH', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
 parser.add_argument('--batch_size', type=int, default=8, help='batch size for training networks')
-parser.add_argument('--save_path', type=str, default="/home/Bigdata/medical_dataset/output/COVID19")
+parser.add_argument('--save_path', type=str, default="/home/Bigdata/medical_dataset/output/CGMH")
 parser.add_argument('--class_cond', type=bool, default=True)
 parser.add_argument('--num_classes_1', type=int, default=2)
 parser.add_argument('--num_classes_2', type=int, default=-1)
@@ -164,7 +164,7 @@ _model_fn, diffusion = create_model_and_diffusion(
 )
 import os, sys
 
-model_path = "/home/Bigdata/mtt_distillation_ckpt/COVID19/stage2/model_stage2_30000.pt"
+model_path = "/home/Bigdata/mtt_distillation_ckpt/CGMH/model_stage2_cgmh_30000.pt"
 if not os.path.exists(model_path):
     raise KeyError
 
@@ -284,12 +284,12 @@ classifier_fn, _ = create_classifier_and_diffusion(
     **args_to_dict(args_2, NAME)
 )
 
-model_path_2 = "/home/Bigdata/mtt_distillation_ckpt/COVID19/stage3/stage3_model_5000.pt"
+model_path_2 = "/home/Bigdata/mtt_distillation_ckpt/CGMH/stage3_cgmh_model_10000.pt"
 if not os.path.exists(model_path_2):
     raise KeyError
 
-model_params = torch.load(model_path_2, map_location="cpu").state_dict()
-classifier_fn.load_state_dict(model_params,strict=False)
+model_params = torch.load(model_path_2, map_location="cpu")
+classifier_fn.load_state_dict(model_params)
 classifier_fn = classifier_fn.cuda()
 
 # TODO: VII. define classifier_kwargs
@@ -315,6 +315,10 @@ for j in range(0, 100, args.batch_size):
     label2 = None
     model_kwargs = {"y1": label1, "y2": label2}
 
+    def condition_1(x1, x2, y=(model_kwargs["y2"])):
+        sig_x = torch.nn.functional.log_softmax(x2 / scale_tau, 1)[range(BATCHSIZE), label1].sum()
+        sig_x = sig_x
+        return sig_x
 
 
     classifier_1 = lambda x, t, cond: cond(*classifier_fn(x, t))
@@ -324,10 +328,10 @@ for j in range(0, 100, args.batch_size):
         noise_schedule,
         model_type="noise",  # or "x_start" or "v" or "score"
         model_kwargs=model_kwargs,
-        guidance_type="uncond",
-        condition=None,
+        guidance_type="classifier",
+        condition=condition_1,
         guidance_scale=guidance_scale,
-        classifier_fn=None,
+        classifier_fn=classifier_1,
         classifier_kwargs={},
     )
     dpm_solver = DPM_Solver(model_fn, noise_schedule, algorithm_type="dpmsolver++",
@@ -358,9 +362,10 @@ for j in range(0, 100, args.batch_size):
             union = ((pred + mask) * weit).sum(dim=(2, 3))
             wiou = (inter + 1) / (union - inter + 1)
             return wiou.sum(), - wbce.sum()
+        sig_x_2 = torch.nn.functional.log_softmax(x2 / scale_tau, 1)[range(BATCHSIZE), (label1 * 0).long()].sum()
         dice_value1, dice_value2 = dice((x1 / scale_tau), (y.mean(1, keepdim=True) > 0).float())
         print("stage 2:", dice_value1, dice_value2)
-        return dice_value1 + dice_value2
+        return dice_value1 + dice_value2 + sig_x_2
 
     # TODO: IV define classifier
 
@@ -421,7 +426,6 @@ for j in range(0, 100, args.batch_size):
         sub_image = turn(sub_image)
         sub_label = turn(sub_label)
         # sem_image.save(f"./cgmh_test/sem_{j + i}.png")
-
         image_path = os.path.join(save_path,f"image_{j + i}.png")
         label_path = os.path.join(save_path,f"mask_{j + i}.png")
         sub_image.save(image_path)
