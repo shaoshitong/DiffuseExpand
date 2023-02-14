@@ -1,2 +1,0 @@
-from utils.create_diffusion_model import create_model_and_diffusion
-print(create_model_and_diffusion.__code__.co_varnames)

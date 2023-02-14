@@ -38,7 +38,7 @@ class GenerateCGMHDataset(Dataset):
             return image, 0, label
 
 class CGMHDataset(Dataset):
-    def __init__(self, root_path, transform=None):
+    def __init__(self, root_path, transform=None,if_val = False):
         self.root_path = root_path
         self.image_path = os.path.join(self.root_path, "Image/")
         self.label_path = os.path.join(self.root_path, "Label/")
@@ -51,6 +51,7 @@ class CGMHDataset(Dataset):
 
         from utils.stnaugment import STNAugment
         self.data_aug = STNAugment()
+        self.if_val = if_val
 
     def apply_transforms(self, image,label, transform, seed=None):
         if seed is None:
@@ -78,11 +79,14 @@ class CGMHDataset(Dataset):
         image = self.transform(image).float()
         label = (self.transform(label) > 0.5).float()
         image,label = self.apply_transforms(image,label,transforms)
-        if_label = random.random() > 0.5
-        if if_label:
-            return (label) * 2 - 1, 1, label
+        if self.if_val:
+            return image,label
         else:
-            return (image) * 2 - 1, 0, label
+            if_label = random.random() > 0.5
+            if if_label:
+                return (label) * 2 - 1, 1, label
+            else:
+                return (image) * 2 - 1, 0, label
 
 
 def split_train_and_val(dataset,split_ratio = 0.9):

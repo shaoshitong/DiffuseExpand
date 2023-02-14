@@ -457,7 +457,7 @@ def epoch2(mode, dataloader, net, optimizer, scheduler, iter, scaler, criticion,
         if mode == "train":
             _dice = criticion_dice(torch.sigmoid(output), lab)
         else:
-            _dice = criticion_dice((torch.sigmoid(output)).float(), lab)
+            _dice = criticion_dice(((torch.sigmoid(output))>0.5).float(), lab)
         loss = criticion(output, lab) + _dice
         a_psnr = psnr((torch.sigmoid(output)).float(), lab).item()
         a_dice = _dice.item()

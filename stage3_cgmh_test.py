@@ -10,8 +10,8 @@ parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
 parser.add_argument('--dataset', type=str, default='CGMH', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
-parser.add_argument('--batch_size', type=int, default=8, help='batch size for training networks')
-parser.add_argument('--save_path', type=str, default="/home/Bigdata/medical_dataset/output/CGMH")
+parser.add_argument('--batch_size', type=int, default=2, help='batch size for training networks')
+parser.add_argument('--save_path', type=str, default="./CGMH_TEST")
 parser.add_argument('--class_cond', type=bool, default=True)
 parser.add_argument('--num_classes_1', type=int, default=2)
 parser.add_argument('--num_classes_2', type=int, default=-1)
@@ -172,6 +172,16 @@ _model_fn.load_state_dict(torch.load(model_path, map_location="cpu"))
 _model_fn.cuda()
 
 
+def grad_estlimate(y, tau, label):
+    b = y.shape[0]
+    sig_y = torch.sigmoid(y / tau).view(b, -1)
+    label = label.view(b, -1).bool()
+    soft_y = torch.stack([sig_y, 1 - sig_y], -1)
+    soft_label = torch.stack([label, ~label], -1)
+    learning_rate = (1 - soft_y[soft_label]) / tau
+    return learning_rate.mean(-1)
+
+
 @torch.no_grad()
 def model(x, t, **kwargs):
     B, C = x.shape[:2]
@@ -315,6 +325,7 @@ for j in range(0, 100, args.batch_size):
     label2 = None
     model_kwargs = {"y1": label1, "y2": label2}
 
+
     def condition_1(x1, x2, y=(model_kwargs["y2"])):
         sig_x = torch.nn.functional.log_softmax(x2 / scale_tau, 1)[range(BATCHSIZE), label1].sum()
         sig_x = sig_x
@@ -351,9 +362,14 @@ for j in range(0, 100, args.batch_size):
     # TODO: III. define condition
     import torch.nn.functional as F
 
+    times = 30
+    lrs = torch.linspace(0.1, 0.005, times)
+    num_iter = 0
+
+
     def condition_2(x1, x2, y=(model_kwargs["y2"])):
         def dice(pred, mask):
-            weit = 1 + mask * 10 # torch.abs(F.avg_pool2d(mask, kernel_size=31, stride=1, padding=15) - mask)
+            weit = 1 + mask * 10  # torch.abs(F.avg_pool2d(mask, kernel_size=31, stride=1, padding=15) - mask)
             wbce = F.binary_cross_entropy_with_logits(pred, mask, reduction='none')
             wbce = (weit * wbce).sum(dim=(2, 3)) / weit.sum(dim=(2, 3))
 
@@ -362,10 +378,17 @@ for j in range(0, 100, args.batch_size):
             union = ((pred + mask) * weit).sum(dim=(2, 3))
             wiou = (inter + 1) / (union - inter + 1)
             return wiou.sum(), - wbce.sum()
+
+        global num_iter
         sig_x_2 = torch.nn.functional.log_softmax(x2 / scale_tau, 1)[range(BATCHSIZE), (label1 * 0).long()].sum()
         dice_value1, dice_value2 = dice((x1 / scale_tau), (y.mean(1, keepdim=True) > 0).float())
         print("stage 2:", dice_value1, dice_value2)
-        return dice_value1 + dice_value2 + sig_x_2
+        learning_rate = grad_estlimate(x1, scale_tau, (y.mean(1, keepdim=True) > 0))
+        learning_rate = lrs[num_iter]/learning_rate
+        print("learning rate:", learning_rate)
+        num_iter += 1
+        return (dice_value1 + dice_value2 + sig_x_2) * learning_rate.detach()
+
 
     # TODO: IV define classifier
 
@@ -387,7 +410,7 @@ for j in range(0, 100, args.batch_size):
     with torch.no_grad():
         x_image = dpm_solver.sample(
             torch.randn_like(x_T).cuda(),
-            steps=30,
+            steps=times,
             order=3,
             skip_type="time_uniform",
             method="multistep",
@@ -411,11 +434,11 @@ for j in range(0, 100, args.batch_size):
         return pil_images
 
 
-
     from PIL import Image
     import torchvision
     import numpy as np
     from utils.vis_utils import vis_trun
+
     turn = torchvision.transforms.ToPILImage()
     for i in range(x_image.shape[0]):
         sub_image, sub_label = x_image[i], y_label[i]
@@ -426,8 +449,7 @@ for j in range(0, 100, args.batch_size):
         sub_image = turn(sub_image)
         sub_label = turn(sub_label)
         # sem_image.save(f"./cgmh_test/sem_{j + i}.png")
-        image_path = os.path.join(save_path,f"image_{j + i}.png")
-        label_path = os.path.join(save_path,f"mask_{j + i}.png")
+        image_path = os.path.join(save_path, f"image_{j + i}.png")
+        label_path = os.path.join(save_path, f"mask_{j + i}.png")
         sub_image.save(image_path)
         sub_label.save(label_path)
-
