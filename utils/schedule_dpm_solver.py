@@ -299,7 +299,8 @@ def model_wrapper(
         if cond is None:
             output = model(x, t_input, **model_kwargs)
         else:
-            output = model(x, t_input, cond, **model_kwargs)
+            model_kwargs["cond"] = cond
+            output = model(x, t_input, **model_kwargs)
         if model_type == "noise":
             return output
         elif model_type == "x_start":
@@ -343,14 +344,23 @@ def model_wrapper(
                 raise NotImplementedError
 
         elif guidance_type == "classifier-free":
-            if guidance_scale == 1. or unconditional_condition is None:
-                return noise_pred_fn(x, t_continuous, cond=condition)
+            x_in = torch.cat([x] * 2)
+            t_in = torch.cat([t_continuous] * 2)
+            c_in = torch.cat([torch.zeros(x.shape[0],device=x.device).float(),
+                               torch.ones(x.shape[0],device=x.device).float()])
+            noise_uncond, noise = noise_pred_fn(x_in, t_in, cond=c_in).chunk(2)
+            assert classifier_fn is not None
+            t_input = get_model_input_time(t_continuous)
+            cond_grad = cond_grad_fn(x, t_input)
+            sigma_t = noise_schedule.marginal_std(t_continuous)
+            if cond_grad.ndim == 4:
+                gs = guidance_scale * sigma_t.view(sigma_t.shape[0], 1, 1, 1) * cond_grad
+            elif cond_grad.ndim == 3:
+                gs = guidance_scale * sigma_t.view(sigma_t.shape[0], 1, 1) * cond_grad
             else:
-                x_in = torch.cat([x] * 2)
-                t_in = torch.cat([t_continuous] * 2)
-                c_in = torch.cat([unconditional_condition, condition])
-                noise_uncond, noise = noise_pred_fn(x_in, t_in, cond=c_in).chunk(2)
-                return noise_uncond + guidance_scale * (noise - noise_uncond)
+                raise NotImplementedError
+            
+            return noise_uncond + guidance_scale * (noise - noise_uncond) -  gs
 
     assert model_type in ["noise", "x_start", "v", "score"]
     assert guidance_type in ["uncond", "classifier", "classifier-free"]

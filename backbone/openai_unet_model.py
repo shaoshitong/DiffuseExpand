@@ -639,7 +639,7 @@ class UNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
 
-    def forward(self, x, timesteps, y1=None, y2=None, y3=None):
+    def forward(self, x, timesteps, y1=None, y2=None, cond=None):
         """
         Apply the model to an input batch.
 
@@ -664,11 +664,9 @@ class UNetModel(nn.Module):
                 is_class_cond = is_class_cond.float()
                 emb[index] = emb[index] + self.label_emb_2(y2[index].float() * is_class_cond)
             else:
-                if y3!=None:
-                    if y3 == 1:
-                        emb[index] = emb[index] + self.label_emb_2(y2[index].float())
-                    else:
-                        emb[index] = emb[index] + self.label_emb_2(torch.zeros_like(y2[index].float()))
+                if cond!=None:
+                    print(cond.shape,y2.shape,y1.shape,"----")
+                    emb[index] = emb[index] + self.label_emb_2(y2[index].float()*cond[index].view(-1,1,1,1))
         h = x.type(self.dtype).float()
         for module in self.input_blocks:
             h = module(h, emb.half())

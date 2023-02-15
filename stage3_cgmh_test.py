@@ -10,13 +10,13 @@ parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
 parser.add_argument('--dataset', type=str, default='CGMH', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
-parser.add_argument('--batch_size', type=int, default=2, help='batch size for training networks')
-parser.add_argument('--save_path', type=str, default="./CGMH_TEST")
+parser.add_argument('--batch_size', type=int, default=32, help='batch size for training networks')
+parser.add_argument('--save_path', type=str, default="./stage4")
 parser.add_argument('--class_cond', type=bool, default=True)
 parser.add_argument('--num_classes_1', type=int, default=2)
 parser.add_argument('--num_classes_2', type=int, default=-1)
 parser.add_argument('--scale_tau', type=float, default=1.)
-parser.add_argument('--guidance_scale', type=float, default=1.)
+parser.add_argument('--guidance_scale', type=float, default=2.)
 parser.add_argument('--cuda_devices', type=str, default="0", help="data parallel training")
 parser2 = copy.deepcopy(parser)
 
@@ -164,7 +164,7 @@ _model_fn, diffusion = create_model_and_diffusion(
 )
 import os, sys
 
-model_path = "/home/Bigdata/mtt_distillation_ckpt/CGMH/model_stage2_cgmh_30000.pt"
+model_path = "/home/project/Medical-Seg-Dataset-Distillation/stage2_cgmh/model_stage2_cgmh_30000.pt"
 if not os.path.exists(model_path):
     raise KeyError
 
@@ -294,7 +294,7 @@ classifier_fn, _ = create_classifier_and_diffusion(
     **args_to_dict(args_2, NAME)
 )
 
-model_path_2 = "/home/Bigdata/mtt_distillation_ckpt/CGMH/stage3_cgmh_model_10000.pt"
+model_path_2 = "/home/project/Medical-Seg-Dataset-Distillation/stage2/stage3_cgmh_model_10000.pt"
 if not os.path.exists(model_path_2):
     raise KeyError
 
@@ -321,7 +321,7 @@ betas = torch.from_numpy(get_named_beta_schedule("linear", 1000)).cuda()
 noise_schedule = NoiseScheduleVP(schedule='discrete', betas=betas)
 image_shape = (BATCHSIZE, 1, 256, 256)
 
-for j in range(0, 10000, args.batch_size):
+for j in range(0, 50000, args.batch_size):
     label2 = None
     model_kwargs = {"y1": label1, "y2": label2}
 
@@ -356,9 +356,9 @@ for j in range(0, 10000, args.batch_size):
             skip_type="time_uniform",
             method="multistep",
         )
-    model_kwargs = {"y1": label1 * 0, "y2": torch.sign(y_label)}
+    model_kwargs = {"y1": torch.cat([label1,label1],0) * 0, "y2": torch.sign(y_label)}
     model_kwargs["y2"][model_kwargs["y2"] <= 0] = torch.Tensor([0]).cuda()
-    model_kwargs["y2"] = model_kwargs["y2"].cuda()
+    model_kwargs["y2"] = torch.cat([model_kwargs["y2"].cuda(),model_kwargs["y2"].cuda()],0)
     # TODO: III. define condition
     import torch.nn.functional as F
 
@@ -367,7 +367,7 @@ for j in range(0, 10000, args.batch_size):
     num_iter = 0
 
 
-    def condition_2(x1, x2, y=(model_kwargs["y2"])):
+    def condition_2(x1, x2, y=(model_kwargs["y2"][0:model_kwargs["y2"].shape[0]//2])):
         def dice(pred, mask):
             weit = 1 + mask * 10  # torch.abs(F.avg_pool2d(mask, kernel_size=31, stride=1, padding=15) - mask)
             wbce = F.binary_cross_entropy_with_logits(pred, mask, reduction='none')
@@ -397,7 +397,7 @@ for j in range(0, 10000, args.batch_size):
         noise_schedule,
         model_type="noise",  # or "x_start" or "v" or "score"
         model_kwargs=model_kwargs,
-        guidance_type="classifier",
+        guidance_type="classifier-free",
         condition=condition_2,
         guidance_scale=guidance_scale,
         classifier_fn=classifier_2,
