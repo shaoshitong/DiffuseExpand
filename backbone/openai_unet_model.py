@@ -3,6 +3,7 @@ from abc import abstractmethod
 import math
 
 import numpy as np
+import torch
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
@@ -478,10 +479,10 @@ class UNetModel(nn.Module):
 
         if self.num_classes_1 is not None and self.num_classes_2 is not None:
             self.label_emb_1 = nn.Embedding(num_classes_1, time_embed_dim)
-            self.label_emb_2 = nn.Sequential(nn.Conv2d(in_channels,1,(3,3),(1,1),(1,1),bias=False),
-                                             nn.AdaptiveAvgPool2d((16,16)),
+            self.label_emb_2 = nn.Sequential(nn.Conv2d(in_channels, 1, (3, 3), (1, 1), (1, 1), bias=False),
+                                             nn.AdaptiveAvgPool2d((16, 16)),
                                              nn.Flatten(),
-                                             nn.Linear(256,time_embed_dim))
+                                             nn.Linear(256, time_embed_dim))
 
         ch = input_ch = int(channel_mult[0] * model_channels)
         self.input_blocks = nn.ModuleList(
@@ -638,7 +639,7 @@ class UNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
 
-    def forward(self, x, timesteps, y1=None, y2=None):
+    def forward(self, x, timesteps, y1=None, y2=None, y3=None):
         """
         Apply the model to an input batch.
 
@@ -657,8 +658,17 @@ class UNetModel(nn.Module):
             emb = emb + self.label_emb_1(y1)
 
         index = (y1 <= 0.).bool()
-        if index.sum().item()>0:
-            emb[index] = emb[index] + self.label_emb_2(y2[index].float())
+        if index.sum().item() > 0:
+            if self.training:
+                is_class_cond = th.rand(size=(y2[index].shape[0], 1, 1, 1), device=y2.device) >= 0.5
+                is_class_cond = is_class_cond.float()
+                emb[index] = emb[index] + self.label_emb_2(y2[index].float() * is_class_cond)
+            else:
+                if y3!=None:
+                    if y3 == 1:
+                        emb[index] = emb[index] + self.label_emb_2(y2[index].float())
+                    else:
+                        emb[index] = emb[index] + self.label_emb_2(torch.zeros_like(y2[index].float()))
         h = x.type(self.dtype).float()
         for module in self.input_blocks:
             h = module(h, emb.half())
@@ -724,12 +734,13 @@ class EncoderUNetModel(UNetModel):
             use_new_attention_order=use_new_attention_order,
         )
 
-        self.out2 =nn.Sequential(
+        self.out2 = nn.Sequential(
             normalization(self._ch),
-            nn.AdaptiveAvgPool2d((1,1)),
+            nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(),
-            nn.Linear(self._input_ch,2)
+            nn.Linear(self._input_ch, 2)
         )
+
     def convert_to_fp16(self):
         """
         Convert the torso of the model to float16.
@@ -757,4 +768,4 @@ class EncoderUNetModel(UNetModel):
         for module in self.output_blocks:
             h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb)
-        return self.out(h),self.out2(h)
+        return self.out(h), self.out2(h)
