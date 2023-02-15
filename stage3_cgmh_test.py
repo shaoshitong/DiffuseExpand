@@ -321,7 +321,7 @@ betas = torch.from_numpy(get_named_beta_schedule("linear", 1000)).cuda()
 noise_schedule = NoiseScheduleVP(schedule='discrete', betas=betas)
 image_shape = (BATCHSIZE, 1, 256, 256)
 
-for j in range(0, 100, args.batch_size):
+for j in range(0, 10000, args.batch_size):
     label2 = None
     model_kwargs = {"y1": label1, "y2": label2}
 
@@ -363,7 +363,7 @@ for j in range(0, 100, args.batch_size):
     import torch.nn.functional as F
 
     times = 30
-    lrs = torch.linspace(0.1, 0.005, times)
+    lrs = torch.linspace(1, 0.5, times)
     num_iter = 0
 
 
@@ -383,9 +383,7 @@ for j in range(0, 100, args.batch_size):
         sig_x_2 = torch.nn.functional.log_softmax(x2 / scale_tau, 1)[range(BATCHSIZE), (label1 * 0).long()].sum()
         dice_value1, dice_value2 = dice((x1 / scale_tau), (y.mean(1, keepdim=True) > 0).float())
         print("stage 2:", dice_value1, dice_value2)
-        learning_rate = grad_estlimate(x1, scale_tau, (y.mean(1, keepdim=True) > 0))
-        learning_rate = lrs[num_iter]/learning_rate
-        print("learning rate:", learning_rate)
+        learning_rate = lrs[num_iter]
         num_iter += 1
         return (dice_value1 + dice_value2 + sig_x_2) * learning_rate.detach()
 

@@ -26,6 +26,21 @@ parser.add_argument('--num_classes_2', type=int, default=-1)
 parser.add_argument('--cuda_devices', type=str, default="0", help="data parallel training")
 
 
+class TestDiceLoss(nn.Module):
+    def __init__(self):
+        super(TestDiceLoss, self).__init__()
+
+    def forward(self, y_true, y_pred, **kwargs):
+        """
+        compute mean dice for binary segmentation map via numpy
+        """
+        intersection = torch.sum(torch.abs(y_pred * y_true), [1, 2, 3])
+        mask_sum = torch.sum(torch.abs(y_true), [1, 2, 3]) + torch.sum(torch.abs(y_pred), [1, 2, 3])
+        smooth = .000001
+        dice = 1 - 2 * (intersection + smooth) / (mask_sum + smooth)
+        return dice
+
+
 class PairDatset(Dataset):
     def __init__(self, data_path):
         self.data_path = data_path
@@ -43,9 +58,10 @@ class PairDatset(Dataset):
                 else:
                     continue
         import re
-        self.indexs = [re.findall(r"\d+",str(self.images[i]))[-1] for i in range(len(self.images))]
+        self.indexs = [re.findall(r"\d+", str(self.images[i]))[-1] for i in range(len(self.images))]
         # print(self.indexs)
         # exit(-1)
+
     def __len__(self):
         return len(self.indexs)
 
@@ -60,8 +76,8 @@ class PairDatset(Dataset):
 
 def classifier(model_path="/home/Bigdata/mtt_distillation_ckpt/COVID19/stage4_tau_0.5/stage3_model_5000.pt"):
     from backbone import UNet
-    classifier_fn = UNet(n_classes=1,n_channels=1)
-    classifier_fn.load_state_dict(torch.load(model_path,map_location="cpu"))
+    classifier_fn = UNet(n_classes=1, n_channels=1)
+    classifier_fn.load_state_dict(torch.load(model_path, map_location="cpu"))
     classifier_fn = classifier_fn.cuda()
     return classifier_fn
 
@@ -96,18 +112,20 @@ class DiceLoss(nn.Module):
         return score
 
 
-def choose(model_path, data_path, tau=0.2):
+def choose(model_path, data_path, save_path, tau=0.2):
     classifier_fn = classifier(model_path)
     dataset = PairDatset(data_path)
-    dataloader = DataLoader(dataset, num_workers=4, shuffle=False)
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    dataloader = DataLoader(dataset, num_workers=4, shuffle=False, batch_size=1)
     pass_list = []
     no_pass_list = []
-    dice_loss = DiceLoss()
+    dice_loss = TestDiceLoss()
     with torch.no_grad():
         classifier_fn.eval()
         for i, (image, label, indexs) in enumerate(dataloader):
             image, label = image.cuda(), label.cuda()
-            pred = (classifier_fn(image).sigmoid()>0.5).float()
+            pred = (classifier_fn(image).sigmoid() > 0.5).float()
             label = label.float()
             dices = dice_loss(pred, label).tolist()
             print(dices)
@@ -122,14 +140,17 @@ def choose(model_path, data_path, tau=0.2):
     turn = torchvision.transforms.ToPILImage()
     print(f"{len(pass_list) / (len(pass_list) + len(no_pass_list))}")
     for i in range(len(pass_list)):
-        if i < 500:
+        if i + 5 < 500:
             image = pass_list[i][0].cpu()
             mask = pass_list[i][1].cpu()
             image = turn(image)
             mask = turn(mask)
-            image.save(f"./stage5_tau_0.333/image_{i}.png")
-            mask.save(f"./stage5_tau_0.333/mask_{i}.png")
+            image.save(f"{save_path}/image_{i + 5}.png")
+            mask.save(f"{save_path}/mask_{i + 5}.png")
 
 
 if __name__ == "__main__":
-    choose("/home/Bigdata/mtt_distillation_ckpt/COVID19/imagenette/covid19_NO_ZCA/Unet/unet_for_fid.pt", "./a100/stage3_tau_0.333_tmp", 0.065)
+    choose("/home/Bigdata/mtt_distillation_ckpt/CGMH/imagenette/CGMH/unet_for_cgmh_fid.pt",
+           "/home/Bigdata/medical_dataset/output/CGMH/stage3_tau_1.0_scale_1.0_tmp",
+           "/home/Bigdata/medical_dataset/output/CGMH/stage4_tau_1.0_scale_1.0",
+           0.065)
