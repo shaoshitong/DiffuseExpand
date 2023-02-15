@@ -80,11 +80,12 @@ class PairDatset(Dataset):
         # image, mask = self.cutmix(image.float(), mask.float())
         # return image, mask
         mask = (mask > 0.5).float()
+        return image,mask
         return self.apply_transforms(image, mask, self.data_aug)
 
 
 def main(args):
-    with  open("./outputs/"  + f"{args.generate_data_path.split('/')[-1]}" + f"_no{random.random()}.txt", "w") as ff: #
+    with  open("./outputs/"   + f"{args.generate_data_path.split('/')[-1]}" + f"_ratio_{args.ratio}_no{random.random()}.txt", "w") as ff: #  f"{args.generate_data_path.split('/')[-1]}"
         args.dsa = True if args.dsa == 'True' else False
         args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         args.dsa_param = ParamDiffAug()
@@ -92,15 +93,15 @@ def main(args):
         if args.dataset == "COVID19":
             dst_train_1 = PairDatset("./origin/")
             dst_train_2 = PairDatset(args.generate_data_path)
-            dst_train, dst_test = split_train_and_val(dst_train_1)
-            # dst_train = ConcatDataset([dst_train_1, dst_train_2])
+            dst_train, dst_test = split_train_and_val(dst_train_1,split_ratio=args.ratio)
+            dst_train = ConcatDataset([dst_train, dst_train_2])
         elif args.dataset == "CGMH":
 
             from utils.cgmh_dataset import CGMHDataset
             dst_train = CGMHDataset(args.data_path,if_val=True)
             dst_train, dst_test = split_train_and_val(dst_train)
-            dst_train_2 = PairDatset(args.generate_data_path)
-            dst_train = ConcatDataset([dst_train, dst_train_2])
+            # dst_train_2 = PairDatset(args.generate_data_path)
+            # dst_train = ConcatDataset([dst_train, dst_train_2])
 
         else:
             raise NotImplementedError
@@ -191,6 +192,7 @@ if __name__ == '__main__':
     parser.add_argument('--train_epochs', type=int, default=50)
     parser.add_argument("--generate_data_path", type=str, default="/home/Bigdata/medical_dataset/output/CGMH/tau_0.5_scale_1.0")
     parser.add_argument('--zca', action='store_true')
+    parser.add_argument('--ratio', type=float,default=0.9)
     parser.add_argument('--decay', action='store_true')
     parser.add_argument('--mom', type=float, default=0, help='momentum')
     parser.add_argument('--l2', type=float, default=0, help='l2 regularization')
