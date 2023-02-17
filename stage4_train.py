@@ -134,23 +134,27 @@ def choose(model_path, data_path, save_path, tau=0.2):
                 if_good = dice < tau
                 if if_good:
                     pass_list.append([image[j], label[j]])
+                elif dice < tau * 2:
+                    pass_list.append([image[j], pred[j]])
                 else:
                     no_pass_list.append([image[j], label[j]])
                 j += 1
     turn = torchvision.transforms.ToPILImage()
     print(f"{len(pass_list) / (len(pass_list) + len(no_pass_list))}")
+    # tau = 1/1 0.7%  4.234%
+    # tau = 1/2 0.7%  4.567%
+    # tau = 1/3  --   4.725%
     for i in range(len(pass_list)):
-        if i + 5 < 500:
-            image = pass_list[i][0].cpu()
-            mask = pass_list[i][1].cpu()
-            image = turn(image)
-            mask = turn(mask)
-            image.save(f"{save_path}/image_{i + 5}.png")
-            mask.save(f"{save_path}/mask_{i + 5}.png")
+        image = pass_list[i][0].cpu()
+        mask = pass_list[i][1].cpu()
+        image = turn(image)
+        mask = turn(mask)
+        image.save(f"{save_path}/image_{i}.png")
+        mask.save(f"{save_path}/mask_{i}.png")
 
 
 if __name__ == "__main__":
     choose("/home/Bigdata/mtt_distillation_ckpt/CGMH/imagenette/CGMH/unet_for_cgmh_fid.pt",
-           "/home/Bigdata/medical_dataset/output/CGMH/stage3_tau_1.0_scale_1.0_tmp",
-           "/home/Bigdata/medical_dataset/output/CGMH/stage4_tau_1.0_scale_1.0",
+           "/home/Bigdata/medical_dataset/output/CGMH/stage_pre/tau_0.5_scale_2.0",
+           "/home/Bigdata/medical_dataset/output/CGMH/stage4_tau_0.5_scale_1.0",
            0.065)

@@ -441,8 +441,8 @@ def epoch2(mode, dataloader, net, optimizer, scheduler, iter, scaler, criticion,
     for i_batch, datum in enumerate(dataloader):
         img = datum[0].float().to(args.device)
         lab = datum[1].float().to(args.device)
-        if mode == "train":
-            img, lab = cutmix(img, lab)
+        # if mode == "train":
+        #     img, lab = cutmix(img, lab)
         if mode == "train" and texture:
             img = torch.cat([torch.stack([torch.roll(im, (torch.randint(args.im_size[0] * args.canvas_size, (1,)),
                                                           torch.randint(args.im_size[0] * args.canvas_size, (1,))),
