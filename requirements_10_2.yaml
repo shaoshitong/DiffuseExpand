@@ -112,4 +112,5 @@ dependencies:
     - matplotlib
     - timm
     - blobfile
+    - ml_collections
     - -e .

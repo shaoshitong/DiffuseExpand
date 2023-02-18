@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 import argparse
 from torch.utils.data import DataLoader, Dataset
+from utils.vis_utils import vis_trun
 import torch.nn as nn
 
 parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
@@ -71,7 +72,7 @@ class PairDatset(Dataset):
         image, mask = Image.open(image_path).convert("L"), Image.open(mask_path).convert("L")
         image, mask = self.turn(image), self.turn(mask)
         mask = (mask > 0.5).float()
-        return image, mask, self.indexs[item]
+        return image, mask #, self.indexs[item]
 
 
 def classifier(model_path="/home/Bigdata/mtt_distillation_ckpt/COVID19/stage4_tau_0.5/stage3_model_5000.pt"):
@@ -152,9 +153,25 @@ def choose(model_path, data_path, save_path, tau=0.2):
         image.save(f"{save_path}/image_{i}.png")
         mask.save(f"{save_path}/mask_{i}.png")
 
+def render(data_path, save_path):
+    import torchvision.transforms as transforms
+    turn = transforms.ToPILImage()
+    turn_back = transforms.ToTensor()
+    dataset = PairDatset(data_path)
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    for i,(image,label) in enumerate(dataset):
+        image = turn_back(turn(image).convert("RGB"))
+        sem_image = vis_trun(image.numpy(),label.numpy(),weight=0.5).transpose((1,2,0))
+        sem_image = Image.fromarray(sem_image)
+        sub_save_path = os.path.join(save_path,f"{i}.png")
+        sem_image.save(sub_save_path)
+
+# if __name__ == "__main__":
+#     choose("/home/Bigdata/mtt_distillation_ckpt/CGMH/imagenette/CGMH/unet_for_cgmh_fid.pt",
+#            "/home/Bigdata/medical_dataset/output/CGMH/stage_pre/tau_0.5_scale_2.0",
+#            "/home/Bigdata/medical_dataset/output/CGMH/stage4_tau_0.5_scale_1.0",
+#            0.065)
 
 if __name__ == "__main__":
-    choose("/home/Bigdata/mtt_distillation_ckpt/CGMH/imagenette/CGMH/unet_for_cgmh_fid.pt",
-           "/home/Bigdata/medical_dataset/output/CGMH/stage_pre/tau_0.5_scale_2.0",
-           "/home/Bigdata/medical_dataset/output/CGMH/stage4_tau_0.5_scale_1.0",
-           0.065)
+    render("./stage4_tau_0.333","render_test_2")

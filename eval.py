@@ -87,7 +87,7 @@ class PairDatset(Dataset):
 
 
 def main(args):
-    with  open("./outputs/" + f"{args.generate_data_path.split('/')[-1]}" + f"_ratio_{args.ratio}_rand_no{random.random()}.txt", "w") as ff: #  f"{args.generate_data_path.split('/')[-1]}"
+    with  open("./outputs/" + f"{args.generate_data_path.split('/')[-1]}" + f"_model_{args.model}_compare_no{random.random()}.txt", "w") as ff: #  f"{args.generate_data_path.split('/')[-1]}"
         args.dsa = True if args.dsa == 'True' else False
         args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         args.dsa_param = ParamDiffAug()
@@ -96,13 +96,13 @@ def main(args):
             dst_train_1 = PairDatset("./origin/")
             dst_train_2 = PairDatset(args.generate_data_path)
             dst_train, dst_test = split_train_and_val(dst_train_1,split_ratio=args.ratio)
-            dst_train = ConcatDataset([dst_train, dst_train_2])
+            dst_train =  dst_train_2
         elif args.dataset == "CGMH":
             from utils.cgmh_dataset import CGMHDataset
             dst_train = CGMHDataset(args.data_path,if_val=True)
             dst_train, dst_test = split_train_and_val(dst_train)
             dst_train_2 = PairDatset(args.generate_data_path)
-            dst_train = ConcatDataset([dst_train, dst_train_2])
+            dst_train = dst_train_2
 
         else:
             raise NotImplementedError
