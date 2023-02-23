@@ -3,9 +3,8 @@
 ### Getting Started
 
 #### Build Environment
-First, download our repo:
+First, download our repo and then enter our repo
 ```bash
-git clone https://github.com/GeorgeCazenavette/DiffuseExpand.git
 cd DiffuseExpand
 ```
 
