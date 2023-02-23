@@ -5,8 +5,8 @@
 #### Build Environment
 First, download our repo:
 ```bash
-git clone https://github.com/GeorgeCazenavette/mtt-distillation.git
-cd mtt-distillation
+git clone https://github.com/GeorgeCazenavette/DiffuseExpand.git
+cd DiffuseExpand
 ```
 
 For environmental establishment, we include ```.yaml``` files.
