@@ -67,6 +67,8 @@ parser.add_argument('--dims', type=int, default=1024,
 parser.add_argument('--save-stats', action='store_true',
                     help=('Generate an npz archive from a directory of samples. '
                           'The first path is used as input and the second as output.'))
+parser.add_argument('--checkpoint', type=str, default="",
+                    help=('The checkpoint file of Feature Extraction Network'))
 parser.add_argument('path', type=str, nargs=2,
                     help=('Paths to the generated images or '
                           'to .npz statistic files'))
@@ -257,14 +259,13 @@ def compute_statistics_of_path(path, model, batch_size, dims, device, startswith
     return _is
 
 
-def calculate_fid_given_paths(paths, batch_size, device, dims, startswith, num_workers=1):
+def calculate_fid_given_paths(checkpoint, paths, batch_size, device, dims, startswith, num_workers=1):
     """Calculates the FID of two paths"""
     for p in paths:
         if not os.path.exists(p):
             raise RuntimeError('Invalid path: %s' % p)
     from backbone import UNetForFID
-    # param = torch.load("/home/Bigdata/mtt_distillation_ckpt/COVID19/imagenette/covid19_NO_ZCA/Unet/unet_for_fid.pt",map_location="cpu")
-    param = torch.load("/home/Bigdata/mtt_distillation_ckpt/CGMH/imagenette/CGMH/unet_for_cgmh_fid.pt")
+    param = torch.load(checkpoint)
     model = UNetForFID(n_channels=1, n_classes=1)
     model.load_state_dict(param)
     model = model.cuda()
@@ -319,7 +320,8 @@ def main():
         save_fid_stats(args.path, args.batch_size, device, args.dims, num_workers)
         return
 
-    is_value = calculate_fid_given_paths(args.path,
+    is_value = calculate_fid_given_paths( args.checkpoint,
+                                          args.path,
                                           args.batch_size,
                                           device,
                                           args.dims,

@@ -1,4 +1,4 @@
-name: distillation
+name: diffuseexpand
 channels:
   - pytorch
   - conda-forge

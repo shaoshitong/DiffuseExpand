@@ -7,25 +7,12 @@ from torch.utils.data import DataLoader, Dataset
 from utils.vis_utils import vis_trun
 import torch.nn as nn
 
-parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
-parser.add_argument('--dataset', type=str, default='COVID19', help='dataset')
-parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
-parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
-parser.add_argument('--batch_size', type=int, default=4, help='batch size for training networks')
-parser.add_argument('--data_path', type=str,
-                    default='./covid-chestxray-dataset/images/',
-                    help='dataset path')
-parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
-parser.add_argument('--csv_path', type=str,
-                    default="./covid-chestxray-dataset/metadata.csv")
-parser.add_argument('--save_path', type=str, default="/home/Bigdata/mtt_distillation_ckpt/stage2")
-parser.add_argument('--unet_ckpt_path', type=str,
-                    default="/home/sst/product/diffusion-model-learning/demo/256x256_diffusion.pt")
-parser.add_argument('--class_cond', type=bool, default=True)
-parser.add_argument('--num_classes_1', type=int, default=2)
-parser.add_argument('--num_classes_2', type=int, default=-1)
-parser.add_argument('--cuda_devices', type=str, default="0", help="data parallel training")
+parser = argparse.ArgumentParser(description='Stage IV')
+parser.add_argument('--unet-checkpoint', type=str)
+parser.add_argument('--stage3-output', type=str)
+parser.add_argument('--stage4-output', type=str)
 
+args = parser.parse_args()
 
 class TestDiceLoss(nn.Module):
     def __init__(self):
@@ -75,7 +62,7 @@ class PairDatset(Dataset):
         return image, mask #, self.indexs[item]
 
 
-def classifier(model_path="/home/Bigdata/mtt_distillation_ckpt/COVID19/stage4_tau_0.5/stage3_model_5000.pt"):
+def classifier(model_path):
     from backbone import UNet
     classifier_fn = UNet(n_classes=1, n_channels=1)
     classifier_fn.load_state_dict(torch.load(model_path, map_location="cpu"))
@@ -153,25 +140,10 @@ def choose(model_path, data_path, save_path, tau=0.2):
         image.save(f"{save_path}/image_{i}.png")
         mask.save(f"{save_path}/mask_{i}.png")
 
-def render(data_path, save_path):
-    import torchvision.transforms as transforms
-    turn = transforms.ToPILImage()
-    turn_back = transforms.ToTensor()
-    dataset = PairDatset(data_path)
-    if not os.path.exists(save_path):
-        os.makedirs(save_path)
-    for i,(image,label) in enumerate(dataset):
-        image = turn_back(turn(image).convert("RGB"))
-        sem_image = vis_trun(image.numpy(),label.numpy(),weight=0.5).transpose((1,2,0))
-        sem_image = Image.fromarray(sem_image)
-        sub_save_path = os.path.join(save_path,f"{i}.png")
-        sem_image.save(sub_save_path)
-
-# if __name__ == "__main__":
-#     choose("/home/Bigdata/mtt_distillation_ckpt/CGMH/imagenette/CGMH/unet_for_cgmh_fid.pt",
-#            "/home/Bigdata/medical_dataset/output/CGMH/stage_pre/tau_0.5_scale_2.0",
-#            "/home/Bigdata/medical_dataset/output/CGMH/stage4_tau_0.5_scale_1.0",
-#            0.065)
 
 if __name__ == "__main__":
-    render("./stage4_tau_0.333","render_test_2")
+
+    choose(args.unet_checkpoint,
+           args.stage3_output,
+           args.stage4_output,
+           0.065)

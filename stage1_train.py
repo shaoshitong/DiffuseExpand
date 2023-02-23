@@ -15,16 +15,15 @@ import numpy as np
 
 from utils import set_device, setup_dist, create_model_and_diffusion, create_named_schedule_sampler,TrainLoop
 
-parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
+parser = argparse.ArgumentParser(description='Stage I')
 parser.add_argument('--dataset', type=str, default='CGMH', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
-parser.add_argument('--batch_size', type=int, default=1, help='batch size for training networks')
-parser.add_argument('--data_path', type=str, default='/home/Bigdata/medical_dataset/CGMH_PelvisSegment', help='dataset path')
-parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
+parser.add_argument('--batch_size', type=int, default=2, help='batch size for training networks')
+parser.add_argument('--data_path', type=str, default='./CGMH_PelvisSegment', help='dataset path')
 parser.add_argument('--csv_path', type=str, default="./covid-chestxray-dataset/metadata.csv")
-parser.add_argument('--save_path', type=str, default="/home/Bigdata/mtt_distillation_ckpt/stage2")
-parser.add_argument('--unet_ckpt_path', type=str, default="/home/sst/product/diffusion-model-learning/demo/256x256_diffusion.pt")
+parser.add_argument('--save_path', type=str, default="./stage2")
+parser.add_argument('--unet_ckpt_path', type=str, default="./256x256_diffusion.pt")
 parser.add_argument('--class_cond', type=bool, default=True)
 parser.add_argument('--num_classes_1', type=int, default=2)
 parser.add_argument('--num_classes_2', type=int, default=-1)
@@ -84,7 +83,7 @@ def create_argparser():
         channel_mult="",
         lr=1e-4,
         fp16_scale_growth=1e-3,
-        lr_anneal_steps=5000,
+        lr_anneal_steps=30000,
         isic=False,
     )
 
@@ -168,34 +167,10 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
     print("build dataset....")
     if args.dataset == "COVID19":
         from utils.covid19_dataset import COVID19Dataset, generate_clean_dataset
+        from utils.cgmh_dataset import split_train_and_val
         assert args.csv_path != "no", "COVID-19 Segmentation task need csv metadata!"
         dst = COVID19Dataset(imgpath=args.data_path, csvpath=args.csv_path, semantic_masks=True)
-        train_set = generate_clean_dataset(dst)
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
-        train_loader = DataLoader(
-            train_set,
-            batch_size=args.batch_size,
-            sampler=train_sampler,
-            num_workers=2,
-            pin_memory=(torch.cuda.is_available()),
-        )
-    elif args.dataset == "ISIC":
-        from utils.isic_dataset import GenerateSkinDataset
-        image_root = '{}/data_train.npy'.format(args.data_path)
-        gt_root = '{}/mask_train.npy'.format(args.data_path)
-        train_set = GenerateSkinDataset(image_root=image_root, gt_root=gt_root)
-        from torchvision import transforms
-        # for i,(image,cond1,cond2) in enumerate(train_set):
-        #     image = image * torch.Tensor([0.229, 0.224, 0.225])[:,None,None] \
-        #     + torch.Tensor([0.485, 0.456, 0.406])[:,None,None]
-        #     turn = transforms.ToPILImage()
-        #     image = turn(image)
-        #     image.save(f"{i}_image.png")
-        #     cond2 = cond2 / 2 + 0.5
-        #     cond2 = turn(cond2)
-        #     cond2.save(f"{i}_label.png")
-        #     print(i)
-        # exit(-1)
+        train_set,_ = split_train_and_val(generate_clean_dataset(dst))
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
         train_loader = DataLoader(
             train_set,

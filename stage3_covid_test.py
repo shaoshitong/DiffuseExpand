@@ -6,18 +6,21 @@ from torch.utils.data import DataLoader
 from utils import create_model_and_diffusion
 import torch
 
-parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
+parser = argparse.ArgumentParser(description='Stage III')
 parser.add_argument('--dataset', type=str, default='COVID19', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
 parser.add_argument('--batch_size', type=int, default=8, help='batch size for training networks')
-parser.add_argument('--save_path', type=str, default="/home/Bigdata/medical_dataset/output/COVID19")
+parser.add_argument('--save_path', type=str, default="./stage3_covid19")
 parser.add_argument('--class_cond', type=bool, default=True)
 parser.add_argument('--num_classes_1', type=int, default=2)
 parser.add_argument('--num_classes_2', type=int, default=-1)
 parser.add_argument('--scale_tau', type=float, default=1.)
 parser.add_argument('--guidance_scale', type=float, default=1.)
 parser.add_argument('--cuda_devices', type=str, default="0", help="data parallel training")
+parser.add_argument('--dpm-checkpoint',type=str,default="./stage2/model_stage2_covid19_30000.pt")
+parser.add_argument('--cls-checkpoint',type=str,default="./stage3/stage3_covid19_model_10000.pt")
+parser.add_argument('--synthesize-number',type=int,default=500)
 parser2 = copy.deepcopy(parser)
 
 

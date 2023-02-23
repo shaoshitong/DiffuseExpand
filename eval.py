@@ -46,10 +46,11 @@ class TestDiceLoss(nn.Module):
         return score.mean()
 
 class PairDatset(Dataset):
-    def __init__(self, data_path):
+    def __init__(self, data_path,if_randaugment=False):
         self.data_path = data_path
         self.images = []
         self.masks = []
+        self.if_randaugment = if_randaugment
         self.turn = torchvision.transforms.ToTensor()
         for root, dirs, files in os.walk(data_path):
             for file in files:
@@ -79,15 +80,13 @@ class PairDatset(Dataset):
         mask_path = os.path.join(self.data_path, "mask_" + str(self.indexs[item]) + ".png")
         image, mask = Image.open(image_path).convert("L"), Image.open(mask_path).convert("L")
         image, mask = self.turn(image), self.turn(mask)
-        # image, mask = self.cutmix(image.float(), mask.float())
-        # return image, mask
+        if self.if_randaugment:
+            return self.apply_transforms(image, mask, self.data_aug)
         mask = (mask > 0.5).float()
-        # return image,mask
-        return self.apply_transforms(image, mask, self.data_aug)
 
 
 def main(args):
-    with  open("./outputs/" + f"{args.generate_data_path.split('/')[-1]}" + f"_model_{args.model}_synthmed_no{random.random()}.txt", "w") as ff: #  f"{args.generate_data_path.split('/')[-1]}"
+    with  open("./outputs/" + f"{args.generate_data_path.split('/')[-1]}" + f"_model_{args.model}_no_{random.random()}.txt", "w") as ff: #  f"{args.generate_data_path.split('/')[-1]}"
         args.dsa = True if args.dsa == 'True' else False
         args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         args.dsa_param = ParamDiffAug()
@@ -98,40 +97,14 @@ def main(args):
             dst = COVID19Dataset(imgpath=args.data_path, csvpath=args.csv_path, semantic_masks=True)
             dst = clean_dataset(dst)
             dst_train, dst_test = split_train_and_val(dst,split_ratio=args.ratio)
-            # save_path = "/home/Bigdata/medical_dataset/COVID/train_origin"
-            # index = 0
-            # turn = torchvision.transforms.ToPILImage()
-            # for image,label in dst_train:
-            #     s = os.path.join(save_path,f"image_{index}.png")
-            #     image = turn(image)
-            #     image.save(s)
-            #
-            #     s = os.path.join(save_path,f"mask_{index}.png")
-            #     label = turn(label)
-            #     label.save(s)
-            #     index+=1
-            # exit(-1)
             dst_train_2 = PairDatset(args.generate_data_path)
-            dst_train =  dst_train_2
+            dst_train =  ConcatDataset([dst_train_2,dst_train])
         elif args.dataset == "CGMH":
             from utils.cgmh_dataset import CGMHDataset
             dst_train = CGMHDataset(args.data_path,if_val=True)
             dst_train, dst_test = split_train_and_val(dst_train)
-            save_path = "/home/Bigdata/medical_dataset/CGMH_PelvisSegment/train_origin"
-            index = 0
-            turn = torchvision.transforms.ToPILImage()
-            for image,label in dst_train:
-                s = os.path.join(save_path,f"image_{index}.png")
-                image = turn(image)
-                image.save(s)
-
-                s = os.path.join(save_path,f"mask_{index}.png")
-                label = turn(label)
-                label.save(s)
-                index+=1
-            exit(-1)
             dst_train_2 = PairDatset(args.generate_data_path)
-            dst_train = dst_train_2
+            dst_train =  ConcatDataset([dst_train_2,dst_train])
 
         else:
             raise NotImplementedError
@@ -140,7 +113,7 @@ def main(args):
         print('Hyper-parameters: \n', args.__dict__)
 
         save_dir = os.path.join(args.buffer_path, args.dataset)
-        save_dir = os.path.join(save_dir, args.subset, args.dataset)
+        save_dir = os.path.join(save_dir, args.dataset)
 
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -206,21 +179,16 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Parameter Processing')
     parser.add_argument('--dataset', type=str, default='CGMH', help='dataset')
-    parser.add_argument('--subset', type=str, default='imagenette', help='subset')
     parser.add_argument('--model', type=str, default='Unet', help='model')
     parser.add_argument('--loss_type', type=str, default='sigmoid_l1', help='loss type')
-    parser.add_argument('--num_experts', type=int, default=50, help='training iterations')
     parser.add_argument('--lr_teacher', type=float, default=0.01, help='learning rate for updating network parameters')
     parser.add_argument('--batch_train', type=int, default=16, help='batch size for training networks')
     parser.add_argument('--batch_real', type=int, default=16, help='batch size for real loader')
     parser.add_argument('--dsa', type=str, default='True', choices=['True', 'False'],
                         help='whether to use differentiable Siamese augmentation.')
-    parser.add_argument('--dsa_strategy', type=str, default='color_crop_cutout_flip_scale_rotate',
-                        help='differentiable Siamese augmentation strategy')
-    parser.add_argument('--data_path', type=str, default='/home/Bigdata/medical_dataset/CGMH_PelvisSegment', help='dataset path')
-    parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
+    parser.add_argument('--data_path', type=str, default='./CGMH_PelvisSegment', help='dataset path')
     parser.add_argument('--train_epochs', type=int, default=50)
-    parser.add_argument("--generate_data_path", type=str, default="/home/Bigdata/medical_dataset/output/CGMH/tau_0.5_scale_1.0")
+    parser.add_argument("--generate_data_path", type=str, default="./output/CGMH/tau_0.5_scale_1.0")
     parser.add_argument('--zca', action='store_true')
     parser.add_argument('--ratio', type=float,default=0.9)
     parser.add_argument('--decay', action='store_true')
@@ -233,7 +201,6 @@ if __name__ == '__main__':
 
 """
 python eval.py --dataset=CGMH --loss_type sigmoid_l1 --model=Unet --train_epochs=50 \
---num_experts=100 --buffer_path=/home/Bigdata/mtt_distillation_ckpt \
---data_path=/home/Bigdata/medical_dataset/CGMH_PelvisSegment \
---csv_path=/home/Bigdata/medical_dataset/COVID/covid-chestxray-dataset-master/metadata.csv 
+--data_path=./CGMH_PelvisSegment \
+--csv_path=./covid-chestxray-dataset-master/metadata.csv 
 """

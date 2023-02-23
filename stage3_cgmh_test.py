@@ -6,18 +6,21 @@ from torch.utils.data import DataLoader
 from utils import create_model_and_diffusion
 import torch
 
-parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
+parser = argparse.ArgumentParser(description='Stage III')
 parser.add_argument('--dataset', type=str, default='CGMH', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
 parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
 parser.add_argument('--batch_size', type=int, default=32, help='batch size for training networks')
-parser.add_argument('--save_path', type=str, default="./stage4")
+parser.add_argument('--save_path', type=str, default="./stage3_cgmh")
 parser.add_argument('--class_cond', type=bool, default=True)
 parser.add_argument('--num_classes_1', type=int, default=2)
 parser.add_argument('--num_classes_2', type=int, default=-1)
 parser.add_argument('--scale_tau', type=float, default=1.)
-parser.add_argument('--guidance_scale', type=float, default=2.)
+parser.add_argument('--guidance_scale', type=float, default=1.)
 parser.add_argument('--cuda_devices', type=str, default="0", help="data parallel training")
+parser.add_argument('--dpm-checkpoint',type=str,default="./stage2/model_stage2_cgmh_30000.pt")
+parser.add_argument('--cls-checkpoint',type=str,default="./stage3/stage3_cgmh_model_10000.pt")
+parser.add_argument('--synthesize-number',type=int,default=500)
 parser2 = copy.deepcopy(parser)
 
 
@@ -164,7 +167,7 @@ _model_fn, diffusion = create_model_and_diffusion(
 )
 import os, sys
 
-model_path = "/home/project/Medical-Seg-Dataset-Distillation/stage2_cgmh/model_stage2_cgmh_30000.pt"
+model_path = args.dpm_checkpoint
 if not os.path.exists(model_path):
     raise KeyError
 
@@ -294,7 +297,7 @@ classifier_fn, _ = create_classifier_and_diffusion(
     **args_to_dict(args_2, NAME)
 )
 
-model_path_2 = "/home/project/Medical-Seg-Dataset-Distillation/stage2/stage3_cgmh_model_10000.pt"
+model_path_2 = args.cls_checkpoint
 if not os.path.exists(model_path_2):
     raise KeyError
 
@@ -321,7 +324,7 @@ betas = torch.from_numpy(get_named_beta_schedule("linear", 1000)).cuda()
 noise_schedule = NoiseScheduleVP(schedule='discrete', betas=betas)
 image_shape = (BATCHSIZE, 1, 256, 256)
 
-for j in range(0, 50000, args.batch_size):
+for j in range(0, args.synthesize_number, args.batch_size):
     label2 = None
     model_kwargs = {"y1": label1, "y2": label2}
 
@@ -434,19 +437,13 @@ for j in range(0, 50000, args.batch_size):
 
     from PIL import Image
     import torchvision
-    import numpy as np
-    from utils.vis_utils import vis_trun
-
     turn = torchvision.transforms.ToPILImage()
     for i in range(x_image.shape[0]):
         sub_image, sub_label = x_image[i], y_label[i]
         sub_image = (sub_image / 2 + 0.5).clamp(0, 1).float().cpu()
         sub_label = ((sub_label / 2 + 0.5).clamp(0, 1) > 0.5).float().cpu()
-        # sem_image = vis_trun(sub_image.expand(3,-1,-1).numpy(),sub_label.numpy()).transpose((1,2,0))
-        # sem_image = Image.fromarray(sem_image)
         sub_image = turn(sub_image)
         sub_label = turn(sub_label)
-        # sem_image.save(f"./cgmh_test/sem_{j + i}.png")
         image_path = os.path.join(save_path, f"image_{j + i}.png")
         label_path = os.path.join(save_path, f"mask_{j + i}.png")
         sub_image.save(image_path)

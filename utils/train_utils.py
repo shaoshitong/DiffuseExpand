@@ -216,7 +216,7 @@ class TrainLoop:
             if self.gpu == 0:
                 state_dict = params
                 print(f"saving model {rate}...")
-                filename = f"model_stage2_cgmh_{self.resume_step + self.step}.pt"
+                filename = f"model_stage2_covid19_{self.resume_step + self.step}.pt"
                 th.save(state_dict, os.path.join(self.save_path, filename))
 
         save_checkpoint(0, self.mp_trainer.model.state_dict())
