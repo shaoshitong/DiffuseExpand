@@ -96,9 +96,6 @@ def make_one_hot(input, num_classes):
     return result
 
 
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -189,24 +186,6 @@ class DiceLoss(nn.Module):
         union = ((pred + mask) * weit).sum(dim=(2, 3))
         wiou = 1 - (inter + 1) / (union - inter + 1)
         return (wbce + wiou).mean()
-
-
-    # def forward(self, predict, target):
-    #     assert predict.shape == target.shape, 'predict & target shape do not match'
-    #     dice = BinaryDiceLoss(**self.kwargs)
-    #     total_loss = 0
-    #     predict = F.softmax(predict, dim=1)
-    #
-    #     for i in range(target.shape[1]):
-    #         if i != self.ignore_index:
-    #             dice_loss = dice(predict[:, i], target[:, i])
-    #             if self.weight is not None:
-    #                 assert self.weight.shape[0] == target.shape[1], \
-    #                     'Expect weight shape [{}], get[{}]'.format(target.shape[1], self.weight.shape[0])
-    #                 dice_loss *= self.weights[i]
-    #             total_loss += dice_loss
-    #
-    #     return total_loss/target.shape[1]
 
 class PSNRLoss(nn.Module):
     """Peak Signal to Noise Ratio
