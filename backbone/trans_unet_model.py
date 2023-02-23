@@ -187,17 +187,33 @@ def get_b16_config():
     config.transformer.num_layers = 12
     config.transformer.attention_dropout_rate = 0.0
     config.transformer.dropout_rate = 0.1
-
+    config.n_skip = 3
     config.classifier = 'seg'
     config.representation_size = None
     config.resnet_pretrained_path = None
-    config.pretrained_path = './model/vit_checkpoint/imagenet21k/ViT-B_16.npz'
+    config.pretrained_path = '/home/Bigdata/mtt_distillation_ckpt/ViT-B_16.npz'
     config.patch_size = 16
     config.decoder_channels = (256, 128, 64, 16)
     config.n_classes = 1
     config.activation = 'softmax'
     return config
 
+def get_r50_b16_config():
+    """Returns the Resnet50 + ViT-B/16 configuration."""
+    config = get_b16_config()
+    config.patches.grid = (16, 16)
+    config.resnet = ml_collections.ConfigDict()
+    config.resnet.num_layers = (3, 4, 9)
+    config.resnet.width_factor = 1
+
+    config.classifier = 'seg'
+    config.pretrained_path = '/home/Bigdata/mtt_distillation_ckpt/R50+ViT-B_16.npz'
+    config.decoder_channels = (256, 128, 64, 16)
+    config.skip_channels = [512, 256, 64, 16]
+    config.n_classes = 1
+    config.n_skip = 3
+    config.activation = 'softmax'
+    return config
 
 logger = logging.getLogger(__name__)
 
@@ -549,7 +565,7 @@ class DecoderCup(nn.Module):
 
 
 class VisionTransformer(nn.Module):
-    def __init__(self, config=get_b16_config(), img_size=256, num_classes=1, zero_head=False, vis=False):
+    def __init__(self, config=get_r50_b16_config(), img_size=256, num_classes=1, zero_head=False, vis=False):
         super(VisionTransformer, self).__init__()
         self.num_classes = num_classes
         self.zero_head = zero_head

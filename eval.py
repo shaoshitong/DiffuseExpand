@@ -87,20 +87,49 @@ class PairDatset(Dataset):
 
 
 def main(args):
-    with  open("./outputs/" + f"{args.generate_data_path.split('/')[-1]}" + f"_model_{args.model}_compare_no{random.random()}.txt", "w") as ff: #  f"{args.generate_data_path.split('/')[-1]}"
+    with  open("./outputs/" + f"{args.generate_data_path.split('/')[-1]}" + f"_model_{args.model}_synthmed_no{random.random()}.txt", "w") as ff: #  f"{args.generate_data_path.split('/')[-1]}"
         args.dsa = True if args.dsa == 'True' else False
         args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         args.dsa_param = ParamDiffAug()
         from utils.cgmh_dataset import split_train_and_val
         if args.dataset == "COVID19":
-            dst_train_1 = PairDatset("./origin/")
+            from utils.covid19_dataset import COVID19Dataset, clean_dataset
+            assert args.csv_path != "no", "COVID-19 Segmentation task need csv metadata!"
+            dst = COVID19Dataset(imgpath=args.data_path, csvpath=args.csv_path, semantic_masks=True)
+            dst = clean_dataset(dst)
+            dst_train, dst_test = split_train_and_val(dst,split_ratio=args.ratio)
+            # save_path = "/home/Bigdata/medical_dataset/COVID/train_origin"
+            # index = 0
+            # turn = torchvision.transforms.ToPILImage()
+            # for image,label in dst_train:
+            #     s = os.path.join(save_path,f"image_{index}.png")
+            #     image = turn(image)
+            #     image.save(s)
+            #
+            #     s = os.path.join(save_path,f"mask_{index}.png")
+            #     label = turn(label)
+            #     label.save(s)
+            #     index+=1
+            # exit(-1)
             dst_train_2 = PairDatset(args.generate_data_path)
-            dst_train, dst_test = split_train_and_val(dst_train_1,split_ratio=args.ratio)
             dst_train =  dst_train_2
         elif args.dataset == "CGMH":
             from utils.cgmh_dataset import CGMHDataset
             dst_train = CGMHDataset(args.data_path,if_val=True)
             dst_train, dst_test = split_train_and_val(dst_train)
+            save_path = "/home/Bigdata/medical_dataset/CGMH_PelvisSegment/train_origin"
+            index = 0
+            turn = torchvision.transforms.ToPILImage()
+            for image,label in dst_train:
+                s = os.path.join(save_path,f"image_{index}.png")
+                image = turn(image)
+                image.save(s)
+
+                s = os.path.join(save_path,f"mask_{index}.png")
+                label = turn(label)
+                label.save(s)
+                index+=1
+            exit(-1)
             dst_train_2 = PairDatset(args.generate_data_path)
             dst_train = dst_train_2
 

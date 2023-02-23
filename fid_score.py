@@ -259,8 +259,8 @@ def calculate_fid_given_paths(paths, batch_size, device, dims, startswith, num_w
         if not os.path.exists(p):
             raise RuntimeError('Invalid path: %s' % p)
     from backbone import UNetForFID
-    # param = torch.load("/home/Bigdata/mtt_distillation_ckpt/COVID19/imagenette/covid19_NO_ZCA/Unet/unet_for_fid.pt",map_location="cpu")
-    param = torch.load("/home/Bigdata/mtt_distillation_ckpt/CGMH/imagenette/CGMH/unet_for_cgmh_fid.pt")
+    param = torch.load("/home/Bigdata/mtt_distillation_ckpt/COVID19/imagenette/covid19_NO_ZCA/Unet/unet_for_fid.pt",map_location="cpu")
+    # param = torch.load("/home/Bigdata/mtt_distillation_ckpt/CGMH/imagenette/CGMH/unet_for_cgmh_fid.pt")
     model = UNetForFID(n_channels=1, n_classes=1)
     model.load_state_dict(param)
     model = model.cuda()

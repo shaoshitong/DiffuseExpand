@@ -8,23 +8,30 @@ import blobfile as bf
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
+import torchvision.transforms
 from torch.nn.parallel.distributed import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 import numpy as np
 
-from utils import set_device, setup_dist, create_model_and_diffusion, create_named_schedule_sampler,TrainLoop
+from utils import set_device, setup_dist, create_model_and_diffusion, create_named_schedule_sampler, TrainLoop, \
+    create_classifier_and_diffusion, PSNRLoss, DiceLoss
+from backbone.fp16_util import MixedPrecisionTrainer
 
 parser = argparse.ArgumentParser(description='Finetune Diffusion Model')
 parser.add_argument('--dataset', type=str, default='CGMH', help='dataset')
 parser.add_argument('--loss_type', type=str, default='mse', help='loss type')
-parser.add_argument('--learn_rate', type=float, default=1e-4, help='learning rate')
-parser.add_argument('--batch_size', type=int, default=1, help='batch size for training networks')
-parser.add_argument('--data_path', type=str, default='/home/Bigdata/medical_dataset/CGMH_PelvisSegment', help='dataset path')
+parser.add_argument('--learn_rate', type=float, default=1e-3, help='learning rate')
+parser.add_argument('--batch_size', type=int, default=7, help='batch size for training networks')
+parser.add_argument('--data_path', type=str,
+                    default='/home/Bigdata/medical_dataset/CGMH_PelvisSegment/',
+                    help='dataset path')
 parser.add_argument('--buffer_path', type=str, default='./buffers', help='buffer path')
-parser.add_argument('--csv_path', type=str, default="./covid-chestxray-dataset/metadata.csv")
-parser.add_argument('--save_path', type=str, default="/home/Bigdata/mtt_distillation_ckpt/stage2")
-parser.add_argument('--unet_ckpt_path', type=str, default="/home/sst/product/diffusion-model-learning/demo/256x256_diffusion.pt")
+parser.add_argument('--csv_path', type=str,
+                    default="./covid-chestxray-dataset/metadata.csv")
+parser.add_argument('--save_path', type=str, default="./checkpoint/")
+parser.add_argument('--unet_ckpt_path', type=str,
+                    default="/home/sst/product/diffusion-model-learning/demo/256x256_diffusion.pt")
 parser.add_argument('--class_cond', type=bool, default=True)
 parser.add_argument('--num_classes_1', type=int, default=2)
 parser.add_argument('--num_classes_2', type=int, default=-1)
@@ -55,8 +62,14 @@ def add_dict_to_argparser(parser, default_dict):
         parser.add_argument(f"--{k}", default=v, type=v_type)
 
 
+def yield_data(dataloader):
+    while True:
+        yield from dataloader
+
+
 def create_argparser():
     defaults = dict(
+        iterations=10000,
         image_size=256,
         num_channels=256,
         num_res_blocks=2,
@@ -82,14 +95,14 @@ def create_argparser():
         eval_interval=5,
         save_interval=1000,
         channel_mult="",
-        lr=1e-4,
+        lr=3e-4,
         fp16_scale_growth=1e-3,
-        lr_anneal_steps=5000,
-        isic=False,
+        lr_anneal_steps=30000,
+        isic = False,
     )
 
     diffusion_defaults = dict(
-        learn_sigma=False, # TODO; MUST BE FALSE
+        learn_sigma=False,  # TODO; MUST BE FALSE
         diffusion_steps=1000,
         noise_schedule="linear",
         timestep_respacing="",
@@ -101,17 +114,17 @@ def create_argparser():
     defaults.update(diffusion_defaults)
 
     # TODO: classifier is not need
-    # classifier_defaults=dict(
-    #         image_size=64,
-    #         classifier_use_fp16=False,
-    #         classifier_width=128,
-    #         classifier_depth=2,
-    #         classifier_attention_resolutions="32,16,8",  # 16
-    #         classifier_use_scale_shift_norm=True,  # False
-    #         classifier_resblock_updown=True,  # False
-    #         classifier_pool="attention",
-    #     )
-    # defaults.update(classifier_defaults)
+    classifier_defaults = dict(
+        image_size=256,
+        classifier_use_fp16=True,
+        classifier_width=64,
+        classifier_depth=2,
+        classifier_attention_resolutions="16",  # 16
+        classifier_use_scale_shift_norm=True,  # False
+        classifier_resblock_updown=True,  # False
+        classifier_pool="attention",
+    )
+    defaults.update(classifier_defaults)
 
     add_dict_to_argparser(parser, defaults)
     return parser
@@ -132,23 +145,24 @@ def set_random_seed(number=0):
     random.seed(number)
 
 
-def load_model(model_dict, model):
-    model_state_dict = model.state_dict()
-    pretrained_dict = {
-        k: v
-        for k, v in model_dict.items()
-        if k in model_state_dict and v.shape == model_state_dict[k].shape
-    }
-    print(
-        f"the prune number is {round((len(model_state_dict.keys())-len(pretrained_dict.keys()))*100/len(model_state_dict.keys()),3)}%"
-    )
-    print("missing keys:")
-    for key in model_state_dict.keys():
-        if key not in pretrained_dict:
-            print(key)
-    model_state_dict.update(pretrained_dict)
-    model.load_state_dict(model_state_dict)
-    return model
+# def load_model(model_dict, model):
+#     model_state_dict = model.state_dict()
+#     pretrained_dict = {
+#         k: v
+#         for k, v in model_dict.items()
+#         if k in model_state_dict and v.shape == model_state_dict[k].shape
+#     }
+#     print(
+#         f"the prune number is {round((len(model_state_dict.keys())-len(pretrained_dict.keys()))*100/len(model_state_dict.keys()),3)}%"
+#     )
+#     print("missing keys:")
+#     for key in model_state_dict.keys():
+#         if key not in pretrained_dict:
+#             print(key)
+#     model_state_dict.update(pretrained_dict)
+#     model.load_state_dict(model_state_dict)
+#     return model
+
 
 def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
     # TODO: Initialize the ddp environment
@@ -163,75 +177,54 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
 
     set_random_seed(rank + np.random.randint(0, 1000))
     torch.cuda.set_device(gpu)
-
     # TODO: build dataset
     print("build dataset....")
     if args.dataset == "COVID19":
-        from utils.covid19_dataset import COVID19Dataset, generate_clean_dataset
+        from utils.covid19_dataset import COVID19Dataset, clean_dataset
         assert args.csv_path != "no", "COVID-19 Segmentation task need csv metadata!"
         dst = COVID19Dataset(imgpath=args.data_path, csvpath=args.csv_path, semantic_masks=True)
-        train_set = generate_clean_dataset(dst)
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
-        train_loader = DataLoader(
-            train_set,
-            batch_size=args.batch_size,
-            sampler=train_sampler,
-            num_workers=2,
-            pin_memory=(torch.cuda.is_available()),
-        )
+        dst = clean_dataset(dst)
     elif args.dataset == "ISIC":
-        from utils.isic_dataset import GenerateSkinDataset
+        from utils.isic_dataset import SkinDataset
         image_root = '{}/data_train.npy'.format(args.data_path)
         gt_root = '{}/mask_train.npy'.format(args.data_path)
-        train_set = GenerateSkinDataset(image_root=image_root, gt_root=gt_root)
-        from torchvision import transforms
-        # for i,(image,cond1,cond2) in enumerate(train_set):
-        #     image = image * torch.Tensor([0.229, 0.224, 0.225])[:,None,None] \
-        #     + torch.Tensor([0.485, 0.456, 0.406])[:,None,None]
-        #     turn = transforms.ToPILImage()
-        #     image = turn(image)
-        #     image.save(f"{i}_image.png")
-        #     cond2 = cond2 / 2 + 0.5
-        #     cond2 = turn(cond2)
-        #     cond2.save(f"{i}_label.png")
-        #     print(i)
-        # exit(-1)
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
-        train_loader = DataLoader(
-            train_set,
-            batch_size=args.batch_size,
-            sampler=train_sampler,
-            num_workers=2,
-            pin_memory=(torch.cuda.is_available()),
-        )
+        dst = SkinDataset(image_root=image_root, gt_root=gt_root)
     elif args.dataset == "CGMH":
-        from utils.cgmh_dataset import GenerateCGMHDataset,split_train_and_val
-        dataset = GenerateCGMHDataset(root_path=args.data_path)
-        train_set,_ = split_train_and_val(dataset)
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
-        train_loader = DataLoader(
-            train_set,
-            batch_size=args.batch_size,
-            sampler=train_sampler,
-            num_workers=2,
-            pin_memory=(torch.cuda.is_available()),
-        )
+        from utils.cgmh_dataset import CGMHDataset
+        dst = CGMHDataset(root_path=args.data_path)
     else:
         raise NotImplementedError
-
-
+    from sklearn.model_selection import StratifiedShuffleSplit
+    labels = [0 for i in range(len(dst))]
+    ss = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=0)
+    train_indices, valid_indices = list(ss.split(np.array(labels)[:, np.newaxis], labels))[0]
+    dst_train = torch.utils.data.Subset(dst, train_indices)
+    dst_test = torch.utils.data.Subset(dst, valid_indices)
+    train_sampler = torch.utils.data.distributed.DistributedSampler(dst_train)
+    train_loader = DataLoader(
+        dst_train,
+        batch_size=args.batch_size,
+        sampler=train_sampler,
+        num_workers=2,
+        pin_memory=(torch.cuda.is_available()),
+    )
+    test_loader = DataLoader(
+        dst_test,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=2,
+        pin_memory=(torch.cuda.is_available()),
+    )
     NAME = [
         "image_size",
-        "class_cond",
+        "classifier_use_fp16",
+        "classifier_width",
+        "classifier_depth",
+        "classifier_attention_resolutions",
+        "classifier_use_scale_shift_norm",
+        "classifier_resblock_updown",
+        "classifier_pool",
         "learn_sigma",
-        "num_channels",
-        "num_res_blocks",
-        "channel_mult",
-        "num_heads",
-        "num_head_channels",
-        "num_heads_upsample",
-        "attention_resolutions",
-        "dropout",
         "diffusion_steps",
         "noise_schedule",
         "timestep_respacing",
@@ -239,49 +232,136 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
         "predict_xstart",
         "rescale_timesteps",
         "rescale_learned_sigmas",
-        "use_checkpoint",
-        "use_scale_shift_norm",
-        "resblock_updown",
-        "use_fp16",
-        "use_new_attention_order",
         "num_classes_1",
         "num_classes_2",
-        "isic",
+        "isic"
     ]
+
     # TODO: Define UNet and diffusion scheduler
-    args.num_classes_2 = int(len(train_set)//2)
-    model, diffusion = create_model_and_diffusion(
+    args.num_classes_2 = 1
+    model, diffusion = create_classifier_and_diffusion(
         **args_to_dict(args, NAME)
     )
-
-    # TODO: translate model to ddp and load ckpt
-    if not os.path.exists(args.unet_ckpt_path):
-        raise ValueError(f"path {args.unet_ckpt_path} not exists unet's checkpoint!")
-    ckpt = torch.load(args.unet_ckpt_path, map_location="cpu")
-    load_model(ckpt,model)
 
     # TODO: build a sampler (default is uniform)
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
 
     # TODO: training
     print("begin training....")
-    TrainLoop(
-        gpu=gpu,
-        model=model,
-        diffusion=diffusion,
-        data=train_loader,
-        batch_size=args.batch_size,
-        microbatch=args.microbatch,
-        lr=args.lr,
-        save_path=args.save_path,
-        save_interval=args.save_interval,
-        resume_checkpoint=args.resume_checkpoint,
-        use_fp16=args.use_fp16,
-        fp16_scale_growth=args.fp16_scale_growth,
-        schedule_sampler=schedule_sampler,
-        weight_decay=args.weight_decay,
-        lr_anneal_steps=args.lr_anneal_steps,
-    ).run_loop()
+    mp_trainer = MixedPrecisionTrainer(
+        model=model, use_fp16=args.classifier_use_fp16, initial_lg_loss_scale=16.0
+    )
+    model.load_state_dict(torch.load("/home/Bigdata/mtt_distillation_ckpt/COVID19/stage3/stage3_model_5000.pt",map_location="cpu"),strict=False)
+
+    model = DDP(
+        model.cuda(gpu),
+        device_ids=[gpu],
+        output_device=gpu,
+        broadcast_buffers=False,
+        bucket_cap_mb=128,
+        find_unused_parameters=True,
+    )
+    opt = AdamW(mp_trainer.master_params, lr=args.lr, weight_decay=args.weight_decay)
+
+    psnr_loss = PSNRLoss()
+    dice_loss = DiceLoss()
+
+    def split_microbatches(microbatch, *args):
+        bs = len(args[0])
+        if microbatch == -1 or microbatch >= bs:
+            yield tuple(args)
+        else:
+            for i in range(0, bs, microbatch):
+                yield tuple(x[i: i + microbatch] if x is not None else None for x in args)
+
+    def forward_backward_log(data_loader, prefix="train"):
+        batch, cond1, cond2 = data_loader
+        cond1 = cond1.cuda(gpu).long()
+        labels = cond2.cuda(gpu).float()
+        batch = batch.cuda(gpu)
+        # Noisy images
+        if args.noised:
+            t, _ = schedule_sampler.sample(batch.shape[0], gpu)
+            batch = diffusion.q_sample(batch, t)
+        else:
+            t = torch.zeros(batch.shape[0], dtype=torch.long).cuda(gpu)
+
+        for i, (sub_batch, sub_cond1, sub_labels, sub_t) in enumerate(
+                split_microbatches(args.microbatch, batch, cond1, labels, t)
+        ):
+            with torch.cuda.amp.autocast(True):
+                logits, pred_cond1 = model(sub_batch, timesteps=sub_t)
+            logits = logits.float()
+            pred_cond1 = pred_cond1.float()
+            index = torch.where(sub_cond1==0)[0]
+            if index.shape[0]>0:
+                sig_logits = logits[index]
+                sig_sub_labels = sub_labels[index]
+                diceloss = dice_loss(sig_logits,sig_sub_labels)
+                mseloss = F.l1_loss(sig_logits.sigmoid(),sig_sub_labels)
+            else:
+                diceloss = torch.Tensor([0.]).cuda()
+                mseloss = torch.Tensor([0.]).cuda()
+            pred_cond1 = F.cross_entropy(pred_cond1,sub_cond1)
+            loss = diceloss + mseloss + pred_cond1
+            losses = {}
+            losses[f"{prefix}_dice_loss"] = diceloss.detach().item()
+            losses[f"{prefix}_l1_loss"] = mseloss.detach().item()
+            loss = loss.mean()
+            if loss.requires_grad:
+                if i == 0:
+                    mp_trainer.zero_grad(opt)
+                mp_trainer.backward(loss * len(sub_batch) / len(batch))
+            return losses
+    for step in range(int(args.iterations//len(train_loader))):
+        for i,(batch,cond1,cond2) in enumerate(train_loader):
+            if gpu==0:
+                print(f"step is {step*len(train_loader)+i}")
+            if args.anneal_lr:
+                set_annealed_lr(opt, args.lr, (step) / args.iterations)
+
+            forward_backward_log([batch,cond1,cond2])
+            mp_trainer.optimize(opt)
+            if (
+                    step
+                    and dist.get_rank() == 0
+                    and not (step) % args.save_interval
+            ):
+                print("saving model...")
+                save_model(mp_trainer, opt, step,"./checkpoint/")
+        total_loss = {"val_dice_loss":0,"val_l1_loss":0}
+        for i,(batch,cond1,cond2) in enumerate(test_loader):
+            with torch.no_grad():
+                with model.no_sync():
+                    model.eval()
+                    losses = forward_backward_log([batch,cond1,cond2], prefix="val")
+                    for key in total_loss.keys():
+                        total_loss[key] += losses[key]
+                    model.train()
+        for key in total_loss.keys():
+            total_loss[key] /= len(test_loader)
+        if gpu==0:
+            print(total_loss)
+
+    if dist.get_rank() == 0:
+        save_model(mp_trainer, opt, args.iterations,args.save_path)
+    dist.barrier()
+
+
+def set_annealed_lr(opt, base_lr, frac_done):
+    lr = base_lr * (1 - frac_done)
+    for param_group in opt.param_groups:
+        param_group["lr"] = lr
+
+
+def save_model(mp_trainer, opt, step, save_path):
+    if dist.get_rank() == 0:
+        global args
+        torch.save(
+            mp_trainer.model.state_dict(),
+            os.path.join(save_path, f"stage3_cgmh_model_{step}.pt"),
+        )
+
 
 def main():
     args = create_argparser().parse_args()
