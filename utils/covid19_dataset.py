@@ -1,13 +1,19 @@
-import torchxrayvision as xrv
-from .stnaugment import STNAugment
-import os, sys, math, random, torch
+import math
+import os
+import random
+import sys
 import zipfile
+
 import imageio
-from PIL import Image
-from torchvision import transforms
 import numpy as np
-from torchxrayvision.datasets import apply_transforms
+import torch
+import torchxrayvision as xrv
+from PIL import Image
 from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms
+from torchxrayvision.datasets import apply_transforms
+
+from .stnaugment import STNAugment
 
 
 def normalize(img, reshape=False, z_norm=False):

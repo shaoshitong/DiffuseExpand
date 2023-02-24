@@ -4,19 +4,21 @@ Train a noised image classifier on Segmentation Dataset.
 
 import argparse
 import os
+
 import blobfile as bf
+import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 import torchvision.transforms
 from torch.nn.parallel.distributed import DistributedDataParallel as DDP
-from torch.utils.data import DataLoader
 from torch.optim import AdamW
-import numpy as np
+from torch.utils.data import DataLoader
 
-from utils import set_device, setup_dist, create_model_and_diffusion, create_named_schedule_sampler, TrainLoop, \
-    create_classifier_and_diffusion, PSNRLoss, DiceLoss
 from backbone.fp16_util import MixedPrecisionTrainer
+from utils import (DiceLoss, PSNRLoss, TrainLoop,
+                   create_classifier_and_diffusion, create_model_and_diffusion,
+                   create_named_schedule_sampler, set_device, setup_dist)
 
 parser = argparse.ArgumentParser(description='Stage II')
 parser.add_argument('--dataset', type=str, default='CGMH', help='dataset')
@@ -139,6 +141,7 @@ def set_random_seed(number=0):
     # torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
     import random
+
     import numpy as np
     np.random.seed(number)
     random.seed(number)

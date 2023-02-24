@@ -12,8 +12,7 @@ import numpy as np
 import torch
 import torch as th
 
-from .losses import normal_kl, discretized_gaussian_log_likelihood
-
+from .losses import discretized_gaussian_log_likelihood, normal_kl
 
 mean_flat = lambda tensor:tensor.mean(dim=list(range(1, len(tensor.shape))))
 

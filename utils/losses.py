@@ -5,7 +5,6 @@ https://github.com/hojonathanho/diffusion/blob/1e0dceb3b3495bbe19116a5e1b3596cd0
 """
 
 import numpy as np
-
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
@@ -96,10 +95,10 @@ def make_one_hot(input, num_classes):
     return result
 
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 
 
 def make_one_hot(input, num_classes):

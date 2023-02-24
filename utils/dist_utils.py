@@ -7,9 +7,9 @@ import os
 import socket
 
 import blobfile as bf
+import numpy as np
 import torch
 import torch.distributed as dist
-import numpy as np
 import torch.multiprocessing as mp
 
 

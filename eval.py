@@ -1,18 +1,20 @@
-import os
 import argparse
+import os
+import random
+import warnings
+
+import numpy as np
 import torch
 import torch.nn as nn
-from PIL import Image
-from util import get_dataset, get_network, get_daparam, \
-    TensorDataset, epoch2, ParamDiffAug
-from utils import DiceLoss
 import torchvision
-import numpy as np
+from PIL import Image
 from timm.scheduler import CosineLRScheduler
-from torch.utils.data import DataLoader, Dataset, ConcatDataset
-import warnings
+from torch.utils.data import ConcatDataset, DataLoader, Dataset
+
+from util import (ParamDiffAug, TensorDataset, epoch2, get_daparam,
+                  get_dataset, get_network)
+from utils import DiceLoss
 from utils.covid19_dataset import STNAugment
-import random
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -80,9 +82,10 @@ class PairDatset(Dataset):
         mask_path = os.path.join(self.data_path, "mask_" + str(self.indexs[item]) + ".png")
         image, mask = Image.open(image_path).convert("L"), Image.open(mask_path).convert("L")
         image, mask = self.turn(image), self.turn(mask)
+        mask = (mask > 0.5).float()
         if self.if_randaugment:
             return self.apply_transforms(image, mask, self.data_aug)
-        mask = (mask > 0.5).float()
+        return image, mask
 
 
 def main(args):
@@ -112,8 +115,7 @@ def main(args):
         # print('\n================== Exp %d ==================\n '%exp)
         print('Hyper-parameters: \n', args.__dict__)
 
-        save_dir = os.path.join(args.buffer_path, args.dataset)
-        save_dir = os.path.join(save_dir, args.dataset)
+        save_dir = os.path.join("./checkpoint", args.dataset)
 
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)

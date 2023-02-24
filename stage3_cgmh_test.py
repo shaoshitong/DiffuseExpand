@@ -1,10 +1,11 @@
+import argparse
 import copy
 
-from utils import NoiseScheduleVP, model_wrapper, DPM_Solver
-import argparse
-from torch.utils.data import DataLoader
-from utils import create_model_and_diffusion
 import torch
+from torch.utils.data import DataLoader
+
+from utils import (DPM_Solver, NoiseScheduleVP, create_model_and_diffusion,
+                   model_wrapper)
 
 parser = argparse.ArgumentParser(description='Stage III')
 parser.add_argument('--dataset', type=str, default='CGMH', help='dataset')
@@ -119,8 +120,9 @@ def set_random_seed(seed):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
-    import numpy as np
     import random
+
+    import numpy as np
     np.random.seed(seed)
     random.seed(seed)
 
@@ -165,7 +167,8 @@ args.num_classes_2 = 1
 _model_fn, diffusion = create_model_and_diffusion(
     **args_to_dict(args, NAME)
 )
-import os, sys
+import os
+import sys
 
 model_path = args.dpm_checkpoint
 if not os.path.exists(model_path):
@@ -435,8 +438,8 @@ for j in range(0, args.synthesize_number, args.batch_size):
         return pil_images
 
 
-    from PIL import Image
     import torchvision
+    from PIL import Image
     turn = torchvision.transforms.ToPILImage()
     for i in range(x_image.shape[0]):
         sub_image, sub_label = x_image[i], y_label[i]

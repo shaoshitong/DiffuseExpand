@@ -9,10 +9,12 @@ import torch.distributed as dist
 from torch.nn.parallel.distributed import DistributedDataParallel as DDP
 from torch.optim import AdamW
 
-from backbone.nn import update_ema
-from .schedule_sampler import LossAwareSampler, UniformSampler
 from backbone.fp16_util import MixedPrecisionTrainer
+from backbone.nn import update_ema
 from utils.covid19_dataset import GenerateCOVID19Dataset
+
+from .schedule_sampler import LossAwareSampler, UniformSampler
+
 # For ImageNet experiments, this was a good default value.
 # We found that the lg_loss_scale quickly climbed to
 # 20-21 within the first ~1K steps of training.

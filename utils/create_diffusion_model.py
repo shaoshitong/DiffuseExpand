@@ -1,8 +1,11 @@
 import argparse
 import inspect
-from backbone import UNetModel, EncoderUNetModel
-from .gaussian_diffusion import ModelVarType, ModelMeanType, get_named_beta_schedule, LossType
-from .respace import space_timesteps, SpacedDiffusion
+
+from backbone import EncoderUNetModel, UNetModel
+
+from .gaussian_diffusion import (LossType, ModelMeanType, ModelVarType,
+                                 get_named_beta_schedule)
+from .respace import SpacedDiffusion, space_timesteps
 
 
 def create_model(

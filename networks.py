@@ -1,6 +1,6 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch
 
 # Acknowledgement to
 # https://github.com/kuangliu/pytorch-cifar,
@@ -541,7 +541,7 @@ class ResNetImageNet(nn.Module):
         return out
 
 
-from backbone import UNet, AttU_Net, R2AttU_Net, VisionTransformer
+from backbone import AttU_Net, R2AttU_Net, UNet, VisionTransformer
 
 
 def Unet(channel, num_classes):

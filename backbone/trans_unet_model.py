@@ -1,23 +1,21 @@
 # coding=utf-8
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
 import copy
 import logging
 import math
-from os.path import join as pjoin
-import numpy as np
-from torch.nn import CrossEntropyLoss, Dropout, Softmax, Linear, Conv2d, LayerNorm
-from torch.nn.modules.utils import _pair
-from scipy import ndimage
-import ml_collections
-import math
-from os.path import join as pjoin
 from collections import OrderedDict
+from os.path import join as pjoin
+
+import ml_collections
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from scipy import ndimage
+from torch.nn import (Conv2d, CrossEntropyLoss, Dropout, LayerNorm, Linear,
+                      Softmax)
+from torch.nn.modules.utils import _pair
 
 
 def np2th(weights, conv=False):

@@ -4,16 +4,18 @@ Train a noised image classifier on Segmentation Dataset.
 
 import argparse
 import os
+
 import blobfile as bf
+import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 from torch.nn.parallel.distributed import DistributedDataParallel as DDP
-from torch.utils.data import DataLoader
 from torch.optim import AdamW
-import numpy as np
+from torch.utils.data import DataLoader
 
-from utils import set_device, setup_dist, create_model_and_diffusion, create_named_schedule_sampler,TrainLoop
+from utils import (TrainLoop, create_model_and_diffusion,
+                   create_named_schedule_sampler, set_device, setup_dist)
 
 parser = argparse.ArgumentParser(description='Stage I')
 parser.add_argument('--dataset', type=str, default='CGMH', help='dataset')
@@ -126,6 +128,7 @@ def set_random_seed(number=0):
     # torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
     import random
+
     import numpy as np
     np.random.seed(number)
     random.seed(number)
@@ -166,8 +169,9 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
     # TODO: build dataset
     print("build dataset....")
     if args.dataset == "COVID19":
-        from utils.covid19_dataset import COVID19Dataset, generate_clean_dataset
         from utils.cgmh_dataset import split_train_and_val
+        from utils.covid19_dataset import (COVID19Dataset,
+                                           generate_clean_dataset)
         assert args.csv_path != "no", "COVID-19 Segmentation task need csv metadata!"
         dst = COVID19Dataset(imgpath=args.data_path, csvpath=args.csv_path, semantic_masks=True)
         train_set,_ = split_train_and_val(generate_clean_dataset(dst))
@@ -180,7 +184,7 @@ def main_worker(gpu, args, ngpus_per_node, world_size, dist_url):
             pin_memory=(torch.cuda.is_available()),
         )
     elif args.dataset == "CGMH":
-        from utils.cgmh_dataset import GenerateCGMHDataset,split_train_and_val
+        from utils.cgmh_dataset import GenerateCGMHDataset, split_train_and_val
         dataset = GenerateCGMHDataset(root_path=args.data_path)
         train_set,_ = split_train_and_val(dataset)
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)

@@ -1,10 +1,12 @@
+import os
 import random
+import sys
 
-import PIL.Image
-import torch, os, sys
 import numpy as np
-from PIL import Image
+import PIL.Image
+import torch
 import torch.nn.functional as F
+from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 

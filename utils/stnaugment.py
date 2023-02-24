@@ -1,10 +1,13 @@
+from typing import Dict, List, Optional, Tuple
+
 import torch
 import torch.nn.functional as F
-from torchvision import transforms
-from typing import List, Tuple, Optional, Dict
 from torch import Tensor
-from torchvision.transforms import functional as F, InterpolationMode
+from torchvision import transforms
+from torchvision.transforms import InterpolationMode
+from torchvision.transforms import functional as F
 from torchvision.transforms.autoaugment import _apply_op
+
 
 class STNAugment(torch.nn.Module):
     r"""RandAugment data augmentation method based on
