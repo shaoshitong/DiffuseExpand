@@ -27,6 +27,7 @@ You can then activate your  conda environment with
 ```bash
 conda activate diffuseexpand
 ```
+---
 
 #### Download pre-training checkpoints
 
@@ -39,6 +40,8 @@ The datasets used in our work are COVID-19 and CGMH Pelvis, please download them
 
 [COVID-19](https://github.com/ieee8023/covid-chestxray-dataset)
 [CGMH Pelvis](https://www.kaggle.com/datasets/tommyngx/cgmh-pelvisseg)
+
+---
 
 #### Fine-tune diffusion model (Stage I)
 We used 8 Tesla A100 GPU for the experiment, with a batchsize of 2 on each Tesla A100 GPU. For COVID-19, we run
@@ -59,6 +62,8 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python stage1_train.py --dataset CGMH \
 ```
 After that, we can get `./stage2/model_cgmh_covid_30000.pt`.
 
+---
+
 #### Train Segmenter (Stage II)
 We used 2 Tesla A100 GPU for the experiment, with a batchsize of 8 on each Tesla A100 GPU. For COVID-19, we run
 ```bash
@@ -78,7 +83,9 @@ CUDA_VISIBLE_DEVICES=0,1 python stage2_train.py --dataset CGMH \
 ```
 After that, we can get `./stage3/stage3_cgmh_model_10000.pt`.
 
-#### Synthesize Image-Mask pairs
+---
+
+#### Synthesize Image-Mask pairs (Stage III)
 
 For synthesizing Image-Mask pairs with COVID-19, we run
 ```bash
@@ -96,7 +103,9 @@ python stage3_cgmh_test.py --save_path ./stage3_cgmh --dpm-checkpoint ./stage2/m
 ```
 After that, we can get synthesized sample pairs in the folder `./stage3_cgmh`.
 
-#### Choose high quality Image-Mask pairs
+---
+
+#### Choose high quality Image-Mask pairs (Stage IV)
 Before proceeding to Stage IV, two additional things need to be done: first, train a unet using `eval.py` and save its corresponding checkpoint, and second, synthesize enough samples pairs at Stage III to facilitate the selection of high-quality sample pairs.
 
 Then for COVID-19, we can run
@@ -112,6 +121,7 @@ python stage4_train.py --unet-checkpoint /path/to/unet/checkpoint --stage3-outpu
 --stage4-output ./stage4_cgmh
 ```
 
+---
 
 ### Train the validated model
 
